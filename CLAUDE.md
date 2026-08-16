@@ -33,8 +33,14 @@ Hand-wired in `App.OnStartup`; there is no DI container. The dependency order is
 ```
 SonarDiscovery -> SonarClient ─┐
 ProcessWatcher ────────────────┼-> PresetCoordinator -> MainViewModel -> MainWindow
-AudioDeviceService -> AudioRoutingService ─┘                         └-> TrayIconHost
+      │            AudioRoutingService ─┘              │             └-> TrayIconHost
+      └───────────────> DefaultDeviceGuard ────────────┘
+AudioDeviceService ─────> both audio services
 ```
+
+`ProcessWatcher` feeds `DefaultDeviceGuard` too: it reports *every* process name, not just mapped ones
+(the mapped-name filter lives in `PresetCoordinator`), so a `SteelSeries*` process appearing is the
+guard's cue to check the default device more often for a minute.
 
 **`PresetCoordinator` is the decision layer** and the only caller of `SonarClient.SelectAsync`. It owns
 `_runningStack` (mapped processes, oldest first, last one wins) and funnels everything through
@@ -51,6 +57,11 @@ model. Every write goes through `MainViewModel.Persist()` → `SettingsStore.Sav
 To add a setting: add a `[JsonPropertyName]` property to `AppSettings`, then a VM property whose setter
 calls `Persist()`. Computed properties need `[JsonIgnore]` or they leak into settings.json.
 
+Every activity line is mirrored to `%APPDATA%\SonarPresetSwitcher\activity.log` by `ActivityFileLog`,
+called from the single `MainViewModel.Log` funnel. This is the only record of what happened at logon:
+`MainWindow.Loaded` never fires under `--minimized`, so `InitializeAsync` does not run and the in-window
+log starts empty. Read it before theorising about a startup bug.
+
 Settings live at `%APPDATA%\SonarPresetSwitcher\settings.json` (atomic write via `.tmp` + `File.Move`).
 Missing keys fall through to property initializers, which is the migration story — there is no explicit
 migration code.
@@ -58,12 +69,21 @@ migration code.
 `ProcessWatcher` tracks process **names only**, never PIDs; anything needing a PID resolves it at the
 point of use with `Process.GetProcessesByName`.
 
-## Per-app audio routing (`Services/Interop/`)
+## Audio interop (`Services/Interop/`)
 
-Sets Windows' *persisted per-application default endpoint* — the same thing Settings → Sound → Volume
-mixer writes. It never touches the system default device. Read the class comment in
-`AudioPolicyConfig.cs` before changing anything there; it records a layout established empirically, not
-from documentation.
+Two separate undocumented APIs, and the distinction matters:
+
+- **`AudioPolicyConfig.cs`** — the *persisted per-application default endpoint*, the same thing
+  Settings → Sound → Volume mixer writes. Used by `AudioRoutingService`. Never touches the system
+  default device.
+- **`PolicyConfig.cs`** — the *system* default endpoint, the same thing "Set as Default Device" in the
+  Sound control panel writes. Used only by `DefaultDeviceGuard`, only when the user has ticked "Hold
+  Windows default", and only for the Console and Multimedia roles (Communications is left to Sonar's
+  Chat device). This exists because SteelSeries GG re-claims the default for "Sonar - Gaming" at every
+  startup and offers no way to disable that.
+
+Read the class comment in `AudioPolicyConfig.cs` before changing anything there; it records a layout
+established empirically, not from documentation.
 
 Constraints that are easy to rediscover the hard way:
 
@@ -73,13 +93,34 @@ Constraints that are easy to rediscover the hard way:
   marshal HSTRINGs by hand. `IntPtr.Zero` is a valid empty HSTRING and is how an override is cleared.
 - Which interface variant the OS exposes is decided by **QueryInterface, never a build-number check**.
   The IIDs differ, so a wrong guess fails the cast instead of calling into an arbitrary vtable slot.
-- **Never probe unknown vtable slots on a live machine.** One of the neighbouring slots is
-  `ClearAllPersistedApplicationDefaultEndpoints`, which wipes every per-app output override system-wide.
+- **Never probe unknown vtable slots on a live machine.** One of `IAudioPolicyConfig`'s neighbouring
+  slots is `ClearAllPersistedApplicationDefaultEndpoints`, which wipes every per-app output override
+  system-wide; `IPolicyConfig`'s neighbours include `SetEndpointVisibility`, which can hide an endpoint.
+  `AudioPolicyConfig` validates its layout with a read-only probe of `GetPersistedDefaultAudioEndpoint`;
+  `PolicyConfig` has no readable equivalent, so `DefaultDeviceGuard` reads the default endpoint back
+  after every write instead. **That read-back is proof of success, never of failure.** The guard stands
+  down only when Windows reported success for every role and the default nevertheless never moved — the
+  signature of a wrong slot. A default that moves and is moved back is a fight with another app, and the
+  guard keeps fighting; once a write has been seen to land, `_apiProven` makes standing down impossible.
+  Collapsing those two cases into one is what used to kill the feature at every logon.
 - Windows returns `E_INVALIDARG` for any process without an audio session. A game is detected the moment
   its process appears, seconds before it initialises audio, so the first attempt fails routinely —
   `AudioRoutingService` retries with backoff. Treat `E_INVALIDARG` as "not yet", not "broken".
 - The override is persistent and keyed by executable: it outlives the process and applies to the next
   launch. `AudioRoutingService.Forget` drops only the cached state, deliberately leaving the override.
+- `DefaultDeviceGuard` polls rather than registering an `IMMNotificationClient`. Every other COM call
+  here creates and releases an enumerator inside a single call; a long-lived callback would drag
+  apartment and lifetime problems into a service that otherwise has none. Being wrong for a second at
+  boot costs nothing — as long as it is recoverable, which is the whole point of the design.
+- **Nothing about the audio stack may be decided at t=0 and cached.** `CPolicyConfigClient` can fail to
+  create in the first seconds of a logon, so `AudioDeviceService.EnsureDefaultDeviceSupport` retries on a
+  backoff instead of a `Lazy`, and `CanSetDefaultDevice` is a non-forcing read of what it last found.
+  `EnsureDefaultDeviceSupport` is also the only caller of `PolicyConfig.Create`, and it runs on the
+  guard's timer thread on purpose: activating that class from the WPF STA proxies every later write
+  through the UI thread's message queue, which fails under logon load.
+- The guard's poll interval is computed each tick (`ApplyCadence`), never latched: 1s during the first
+  minute and after a `SteelSeries*` process appears, 15s while another app is fighting it, 2s otherwise —
+  and it recovers when the fight goes quiet.
 
 ## WPF specifics
 

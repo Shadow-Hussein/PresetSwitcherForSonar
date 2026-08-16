@@ -18,16 +18,83 @@
     <SolidColorBrush x:Key="Field" Color="#12141A" />
     <SolidColorBrush x:Key="Control" Color="#2A2E38" />
 
+    <!-- Scrollbar greys: visible against both the panel and the darker field background. -->
+    <SolidColorBrush x:Key="Scroll" Color="#4A5160" />
+    <SolidColorBrush x:Key="ScrollHover" Color="#6E7788" />
+
+    <Geometry x:Key="ArrowUp">M 0,5 L 8,5 L 4,0 Z</Geometry>
+    <Geometry x:Key="ArrowDown">M 0,0 L 8,0 L 4,5 Z</Geometry>
+    <Geometry x:Key="ArrowLeft">M 5,0 L 5,8 L 0,4 Z</Geometry>
+    <Geometry x:Key="ArrowRight">M 0,0 L 0,8 L 5,4 Z</Geometry>
+
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Fg}" />
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!--
+        The stock checkbox draws a square BulletChrome with a system border that ignores CornerRadius,
+        so the rounded box needs a full template. Several checkboxes here carry no content (the
+        per-mapping enable toggle is a bare box with a tooltip), hence the HasContent trigger — an
+        8px gap in front of nothing reads as a misaligned column.
+    -->
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource Fg}" />
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Border x:Name="Box"
+                                Width="16" Height="16"
+                                Background="{StaticResource Field}"
+                                BorderBrush="{StaticResource Line}"
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                VerticalAlignment="Center"
+                                SnapsToDevicePixels="True">
+                            <Path x:Name="Tick"
+                                  Data="M 0,3.5 L 3,6.5 L 8,0.5"
+                                  Stroke="{StaticResource Accent}"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Visibility="Collapsed" />
+                        </Border>
+
+                        <ContentPresenter x:Name="Label"
+                                          Margin="8,0,0,0"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="HasContent" Value="False">
+                            <Setter TargetName="Label" Property="Margin" Value="0" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource Dim}" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Line}" />
+                            <Setter TargetName="Tick" Property="Stroke" Value="{StaticResource Dim}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="TextBox">
@@ -37,6 +104,51 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CaretBrush" Value="{StaticResource Accent}" />
         <Setter Property="FontFamily" Value="Segoe UI" />
+    </Style>
+
+    <!--
+        Tooltips need a full template for the same reason buttons do: the stock chrome paints the
+        system light background regardless of Background, and its Border has no CornerRadius to bind
+        to. HasDropShadow is off deliberately — the system shadow is drawn behind a square popup and
+        shows through the rounded corners as pale wedges.
+    -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{StaticResource Panel}" />
+        <Setter Property="Foreground" Value="{StaticResource Fg}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="HasDropShadow" Value="False" />
+        <Setter Property="MaxWidth" Value="600" />
+        <!--
+            Wrapping needs a ContentTemplate: a bare ContentPresenter renders a string into a TextBlock
+            that never wraps, so MaxWidth would clip instead of reflow. Safe because every ToolTip in
+            this app is a string — hand one a UIElement and it would be ToString()'d.
+        -->
+        <Setter Property="ContentTemplate">
+            <Setter.Value>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource Fg}" />
+                </DataTemplate>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter Margin="{TemplateBinding Padding}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!--
@@ -237,6 +349,171 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!--
+        Scrollbars. The stock ones paint a light-grey track with square buttons, which is the last
+        piece of Windows chrome that shows through this theme. Track and background stay transparent
+        so the bar floats over whatever card it sits in; only the thumb and arrows are drawn.
+
+        The line buttons carry their glyph as Content (a Geometry resource) rather than getting four
+        near-identical styles.
+    -->
+    <Style x:Key="ScrollThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Bd"
+                            Background="{StaticResource Scroll}"
+                            CornerRadius="5"
+                            Margin="2"
+                            SnapsToDevicePixels="True" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ScrollHover}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ScrollHover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ScrollLineButton" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border x:Name="Bd"
+                            Background="Transparent"
+                            CornerRadius="5"
+                            Margin="2"
+                            SnapsToDevicePixels="True">
+                        <Path x:Name="Glyph"
+                              Data="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                              Fill="{StaticResource Scroll}"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource Control}" />
+                            <Setter TargetName="Glyph" Property="Fill" Value="{StaticResource ScrollHover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Glyph" Property="Fill" Value="{StaticResource Fg}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The click-in-the-empty-track buttons: invisible, but they still have to take hit tests. -->
+    <Style x:Key="ScrollPageButton" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Rectangle Fill="Transparent" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Width" Value="14" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="14" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="14" />
+                        </Grid.RowDefinitions>
+
+                        <RepeatButton Grid.Row="0"
+                                      Style="{StaticResource ScrollLineButton}"
+                                      Content="{StaticResource ArrowUp}"
+                                      Command="ScrollBar.LineUpCommand" />
+
+                        <Track x:Name="PART_Track" Grid.Row="1" IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollPageButton}"
+                                              Command="ScrollBar.PageUpCommand" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource ScrollThumb}" />
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollPageButton}"
+                                              Command="ScrollBar.PageDownCommand" />
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+
+                        <RepeatButton Grid.Row="2"
+                                      Style="{StaticResource ScrollLineButton}"
+                                      Content="{StaticResource ArrowDown}"
+                                      Command="ScrollBar.LineDownCommand" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <!-- Without this the horizontal bar would lay itself out with the vertical row grid. -->
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="14" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid Background="Transparent">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="14" />
+                                </Grid.ColumnDefinitions>
+
+                                <RepeatButton Grid.Column="0"
+                                              Style="{StaticResource ScrollLineButton}"
+                                              Content="{StaticResource ArrowLeft}"
+                                              Command="ScrollBar.LineLeftCommand" />
+
+                                <Track x:Name="PART_Track" Grid.Column="1" Orientation="Horizontal">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ScrollPageButton}"
+                                                      Command="ScrollBar.PageLeftCommand" />
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource ScrollThumb}" />
+                                    </Track.Thumb>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ScrollPageButton}"
+                                                      Command="ScrollBar.PageRightCommand" />
+                                    </Track.IncreaseRepeatButton>
+                                </Track>
+
+                                <RepeatButton Grid.Column="2"
+                                              Style="{StaticResource ScrollLineButton}"
+                                              Content="{StaticResource ArrowRight}"
+                                              Command="ScrollBar.LineRightCommand" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!--

@@ -209,6 +209,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -235,7 +236,32 @@
                               IsEnabled="{Binding AudioRoutingSupported}"
                               ToolTip="{Binding OutputDeviceTooltip}" />
 
-                    <StackPanel Grid.Row="1" Grid.ColumnSpan="5"
+                    <CheckBox Grid.Row="1" Grid.Column="0"
+                              Content="Hold Windows default"
+                              IsChecked="{Binding KeepWindowsDefault}"
+                              IsEnabled="{Binding KeepWindowsDefaultSupported}"
+                              VerticalAlignment="Center"
+                              Margin="0,12,10,0"
+                              ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+                    <ComboBox Grid.Row="1" Grid.Column="1"
+                              ItemsSource="{Binding SystemDefaultDevices}"
+                              SelectedItem="{Binding KeepWindowsDefaultDevice, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource AudioDeviceItem}"
+                              TextSearch.TextPath="Name"
+                              IsEnabled="{Binding KeepWindowsDefaultSupported}"
+                              Margin="0,12,0,0"
+                              ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3"
+                               Text="Puts the Windows default playback device back when SteelSeries GG takes it at startup."
+                               Foreground="{StaticResource Dim}"
+                               FontSize="11"
+                               TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"
+                               Margin="20,12,0,0"
+                               ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+
+                    <StackPanel Grid.Row="2" Grid.ColumnSpan="5"
                                 Orientation="Horizontal"
                                 HorizontalAlignment="Right"
                                 Margin="0,12,0,0">

@@ -15,6 +15,7 @@ public partial class App : Application
     private ProcessWatcher? _watcher;
     private AudioDeviceService? _audioDevices;
     private AudioRoutingService? _routing;
+    private DefaultDeviceGuard? _defaultGuard;
     private PresetCoordinator? _coordinator;
     private TrayIconHost? _tray;
 
@@ -32,16 +33,24 @@ public partial class App : Application
             return;
         }
 
+        ActivityFileLog.StartSession(e.Args);
+
         var settings = SettingsStore.Load();
+
+        // A logon entry left pointing at a path that no longer launches (moved exe, or the dotnet muxer
+        // recorded by an older build) fails silently at boot, so fix it while we know where we live.
+        StartupRegistration.RepairIfBroken();
 
         _discovery = new SonarDiscovery();
         _client = new SonarClient(_discovery);
         _watcher = new ProcessWatcher { IntervalSeconds = settings.ClampedPollInterval };
         _audioDevices = new AudioDeviceService();
         _routing = new AudioRoutingService(_audioDevices);
+        _defaultGuard = new DefaultDeviceGuard(_audioDevices, _watcher, settings);
         _coordinator = new PresetCoordinator(_client, _watcher, _routing, settings);
 
-        var viewModel = new MainViewModel(_client, _watcher, _coordinator, _audioDevices, _routing, settings);
+        var viewModel = new MainViewModel(
+            _client, _watcher, _coordinator, _audioDevices, _routing, _defaultGuard, settings);
         var window = new MainWindow(viewModel);
         MainWindow = window;
 
@@ -53,12 +62,14 @@ public partial class App : Application
 
         _coordinator.Start();
         _watcher.Start();
+        _defaultGuard.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         _tray?.Dispose();
         _coordinator?.Dispose();
+        _defaultGuard?.Dispose();
         _routing?.Dispose();
         _watcher?.Dispose();
         _client?.Dispose();

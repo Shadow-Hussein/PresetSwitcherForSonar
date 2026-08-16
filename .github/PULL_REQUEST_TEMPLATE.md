@@ -18,11 +18,18 @@ Tick what you actually did:
 - [ ] App still degrades gracefully (no crash) with GG closed
 - [ ] Settings still round-trip through `%APPDATA%\SonarPresetSwitcher\settings.json`
 
-If this touches **per-app audio routing** (`Services/Interop/`):
+If this touches **per-app audio routing** (`AudioPolicyConfig`, `AudioRoutingService`):
 
 - [ ] Settings → Sound → Volume mixer shows the app on the chosen device
 - [ ] The **system** default device is unchanged
 - [ ] No unknown COM vtable slot was probed on a live machine
+
+If this touches the **system default device** (`PolicyConfig`, `DefaultDeviceGuard`):
+
+- [ ] With the option off, nothing writes the system default — GG still wins
+- [ ] With it on, the default returns to the chosen device after GG or the Sound panel moves it
+- [ ] The **communications** default is unchanged
+- [ ] Unplugging the held device does not send Windows at a dead endpoint
 
 ## Notes for the reviewer
 

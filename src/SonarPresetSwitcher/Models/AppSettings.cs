@@ -22,6 +22,22 @@ public sealed class AppSettings
     [JsonPropertyName("defaultOutputDeviceName")]
     public string DefaultOutputDeviceName { get; set; } = "";
 
+    /// <summary>
+    /// Puts the Windows *system* default playback device back to
+    /// <see cref="KeepWindowsDefaultDeviceId"/> whenever another app moves it — SteelSeries GG does
+    /// exactly that at every startup. Off by default: this is the one setting that changes Windows
+    /// itself rather than a per-app override.
+    /// </summary>
+    [JsonPropertyName("keepWindowsDefault")]
+    public bool KeepWindowsDefault { get; set; }
+
+    [JsonPropertyName("keepWindowsDefaultDeviceId")]
+    public string KeepWindowsDefaultDeviceId { get; set; } = "";
+
+    /// <summary>Cached so the picker still shows a sensible label if the device is unplugged.</summary>
+    [JsonPropertyName("keepWindowsDefaultDeviceName")]
+    public string KeepWindowsDefaultDeviceName { get; set; } = "";
+
     [JsonPropertyName("showNotifications")]
     public bool ShowNotifications { get; set; } = true;
 

@@ -62,10 +62,30 @@ than WMI events: no WMI permissions needed, no COM lifetime issues, and the firs
 catches games that were already running. Reading `Process.ProcessName` needs no elevation, so
 anti-cheat titles running elevated are still detected.
 
+## Holding the Windows default playback device
+
+SteelSeries GG claims the Windows default playback device for its own "Sonar - Gaming" virtual device
+every time it starts, so a default you set by hand is gone after the next reboot. GG has no setting to
+turn that off.
+
+**Settings → "Hold Windows default"** ticks that back. Pick an output device, and `DefaultDeviceGuard`
+puts the system default back to it whenever anything moves it — checking every 2s, and slowing down
+rather than fighting if something keeps taking it.
+
+Two things to know:
+
+- This is the only part of the app that writes to Windows itself rather than a per-app override. While
+  it is on, changing the default from Windows' Sound settings will not stick; untick it first.
+- Only the Console and Multimedia roles are set, the pair behind "Set as Default Device". The
+  *communications* default is left alone, so Sonar keeps its Chat device for calls.
+
+Off by default. If you would rather not touch the system default at all, the per-app output device
+column does the same job for individual games without it.
+
 ## Settings
 
 `%APPDATA%\SonarPresetSwitcher\settings.json`, written atomically. Holds the mappings, the default
-preset, tray/autostart toggles, and the poll interval.
+preset, the held default device, tray/autostart toggles, and the poll interval.
 
 ## Caveat
 

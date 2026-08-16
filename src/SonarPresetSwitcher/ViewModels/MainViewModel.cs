@@ -14,6 +14,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly PresetCoordinator _coordinator;
     private readonly AudioDeviceService _audioDevices;
     private readonly AudioRoutingService _routing;
+    private readonly DefaultDeviceGuard _defaultGuard;
     private readonly AppSettings _settings;
 
     private bool _connected;
@@ -22,6 +23,7 @@ public sealed class MainViewModel : ObservableObject
     private string _activeMappingText = "No mapped game running";
     private SonarConfig? _defaultPreset;
     private AudioDevice? _defaultOutputDevice;
+    private AudioDevice? _keepWindowsDefaultDevice;
     private bool _loading;
 
     public MainViewModel(
@@ -30,6 +32,7 @@ public sealed class MainViewModel : ObservableObject
         PresetCoordinator coordinator,
         AudioDeviceService audioDevices,
         AudioRoutingService routing,
+        DefaultDeviceGuard defaultGuard,
         AppSettings settings)
     {
         _client = client;
@@ -37,6 +40,7 @@ public sealed class MainViewModel : ObservableObject
         _coordinator = coordinator;
         _audioDevices = audioDevices;
         _routing = routing;
+        _defaultGuard = defaultGuard;
         _settings = settings;
 
         foreach (var mapping in settings.Mappings)
@@ -49,6 +53,8 @@ public sealed class MainViewModel : ObservableObject
         _coordinator.StateChanged += OnCoordinatorStateChanged;
         _coordinator.Activity += OnActivity;
         _routing.Activity += OnActivity;
+        _defaultGuard.Activity += OnActivity;
+        _defaultGuard.SupportChanged += OnDefaultGuardSupportChanged;
     }
 
     public ObservableCollection<MappingRowViewModel> Mappings { get; } = [];
@@ -61,6 +67,9 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Same list for mapping rows, with the "use the global default" entry in front.</summary>
     public ObservableCollection<AudioDevice> MappingOutputDevices { get; } = [];
+
+    /// <summary>Real devices only — "system default" is meaningless when you are picking what it is.</summary>
+    public ObservableCollection<AudioDevice> SystemDefaultDevices { get; } = [];
 
     public ObservableCollection<string> ActivityLog { get; } = [];
 
@@ -79,6 +88,18 @@ public sealed class MainViewModel : ObservableObject
           "Windows remembers the choice per executable, so it also applies the next time the game " +
           "launches — and a game that is already playing audio may need a restart to move over."
         : "Per-app audio routing is not available on this build of Windows.";
+
+    /// <summary>False when Windows will not let us move the default device; the row greys out.</summary>
+    public bool KeepWindowsDefaultSupported => _defaultGuard.IsSupported;
+
+    public string KeepWindowsDefaultTooltip => KeepWindowsDefaultSupported
+        ? "Puts the Windows default playback device back to this one whenever another app changes " +
+          "it.\n\nSteelSeries GG re-claims the default for \"Sonar - Gaming\" every time it starts, " +
+          "which is why the device you set by hand is gone after a reboot; GG has no setting to stop " +
+          "that, so this changes it back instead.\n\n" +
+          "This is the one option that writes to Windows itself rather than a per-app override. While " +
+          "it is on, changing the default from the Sound settings will not stick — untick it first."
+        : "Changing the Windows default device is not available on this build of Windows.";
 
     public bool Connected
     {
@@ -132,6 +153,55 @@ public sealed class MainViewModel : ObservableObject
 
             _settings.DefaultOutputDeviceId = value?.Id ?? AudioDevice.SystemDefaultId;
             _settings.DefaultOutputDeviceName = value is null || value.IsSentinel ? "" : value.Name;
+            Persist();
+        }
+    }
+
+    /// <summary>
+    /// Ticking this on with nothing chosen yet adopts whatever Windows is using right now, so the
+    /// checkbox on its own means "stop letting other apps move this".
+    /// </summary>
+    public bool KeepWindowsDefault
+    {
+        get => _settings.KeepWindowsDefault;
+        set
+        {
+            if (_settings.KeepWindowsDefault == value)
+                return;
+
+            _settings.KeepWindowsDefault = value;
+            OnPropertyChanged();
+
+            if (value && KeepWindowsDefaultDevice is null)
+            {
+                var current = _audioDevices.GetDefaultRenderDeviceId();
+                var device = SystemDefaultDevices.FirstOrDefault(d =>
+                    string.Equals(d.Id, current, StringComparison.OrdinalIgnoreCase));
+
+                if (device is not null)
+                {
+                    // Assigning the device persists on its own; do not save twice.
+                    KeepWindowsDefaultDevice = device;
+                    return;
+                }
+
+                Log("Pick the output device to hold before turning this on.");
+            }
+
+            Persist();
+        }
+    }
+
+    public AudioDevice? KeepWindowsDefaultDevice
+    {
+        get => _keepWindowsDefaultDevice;
+        set
+        {
+            if (!SetField(ref _keepWindowsDefaultDevice, value) || _loading)
+                return;
+
+            _settings.KeepWindowsDefaultDeviceId = value?.Id ?? "";
+            _settings.KeepWindowsDefaultDeviceName = value?.Name ?? "";
             Persist();
         }
     }
@@ -217,6 +287,9 @@ public sealed class MainViewModel : ObservableObject
         if (!AudioRoutingSupported)
             Log("Per-app audio routing is unavailable on this build of Windows.");
 
+        if (!KeepWindowsDefaultSupported)
+            Log("Holding the Windows default playback device is unavailable on this build of Windows.");
+
         await RefreshAsync();
     }
 
@@ -278,10 +351,13 @@ public sealed class MainViewModel : ObservableObject
             MappingOutputDevices.Add(AudioDevice.Inherit);
             MappingOutputDevices.Add(AudioDevice.SystemDefault);
 
+            SystemDefaultDevices.Clear();
+
             foreach (var device in ordered)
             {
                 OutputDevices.Add(device);
                 MappingOutputDevices.Add(device);
+                SystemDefaultDevices.Add(device);
             }
 
             foreach (var row in Mappings)
@@ -290,6 +366,9 @@ public sealed class MainViewModel : ObservableObject
             DefaultOutputDevice = OutputDevices.FirstOrDefault(d =>
                 string.Equals(d.Id, _settings.DefaultOutputDeviceId, StringComparison.OrdinalIgnoreCase))
                 ?? AudioDevice.SystemDefault;
+
+            KeepWindowsDefaultDevice = SystemDefaultDevices.FirstOrDefault(d =>
+                string.Equals(d.Id, _settings.KeepWindowsDefaultDeviceId, StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -300,6 +379,7 @@ public sealed class MainViewModel : ObservableObject
     private IEnumerable<(string Id, string Name)> SavedDeviceReferences()
     {
         yield return (_settings.DefaultOutputDeviceId, _settings.DefaultOutputDeviceName);
+        yield return (_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
 
         foreach (var mapping in _settings.Mappings)
         {
@@ -381,6 +461,7 @@ public sealed class MainViewModel : ObservableObject
     {
         SettingsStore.Save(_settings);
         _coordinator.UpdateSettings(_settings);
+        _defaultGuard.UpdateSettings(_settings);
     }
 
     // ---- coordinator events ------------------------------------------------------------------
@@ -402,8 +483,21 @@ public sealed class MainViewModel : ObservableObject
 
     private void OnActivity(string message) => Dispatch(() => Log(message));
 
+    /// <summary>
+    /// Whether the default endpoint can be moved is settled a moment after startup, on the guard's own
+    /// thread, so the row has to be told to re-read it — the bindings would otherwise keep the answer
+    /// from before the guard's first tick.
+    /// </summary>
+    private void OnDefaultGuardSupportChanged() => Dispatch(() =>
+    {
+        OnPropertyChanged(nameof(KeepWindowsDefaultSupported));
+        OnPropertyChanged(nameof(KeepWindowsDefaultTooltip));
+    });
+
     private void Log(string message)
     {
+        ActivityFileLog.Append(message);
+
         ActivityLog.Insert(0, $"{DateTime.Now:HH:mm:ss}  {message}");
         while (ActivityLog.Count > MaxActivityLines)
             ActivityLog.RemoveAt(ActivityLog.Count - 1);
