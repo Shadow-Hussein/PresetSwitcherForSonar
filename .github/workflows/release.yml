@@ -18,10 +18,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -65,7 +65,7 @@ jobs:
           Write-Host "SHA256: $hash"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86
           path: |
@@ -76,7 +76,7 @@ jobs:
       # Only a real tag push cuts a GitHub Release; workflow_dispatch stops at the artifact above.
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: v${{ steps.version.outputs.version }}
           draft: true
