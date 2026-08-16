@@ -9,7 +9,7 @@ are wired together, and the traps that only show up at runtime.
 ## Commands
 
 ```bash
-dotnet build "SonarGamingPresetSwitcher.sln" -c Debug
+dotnet build "SonarPresetSwitcher.sln" -c Debug
 ```
 
 Output: `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/SonarPresetSwitcher.exe`. Pass `--minimized`

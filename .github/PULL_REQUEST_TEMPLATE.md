@@ -11,7 +11,7 @@
 There is no test project — verification is manual, against a live SteelSeries GG.
 Tick what you actually did:
 
-- [ ] `dotnet build "SonarGamingPresetSwitcher.sln" -c Debug` succeeds with no new warnings
+- [ ] `dotnet build "SonarPresetSwitcher.sln" -c Debug` succeeds with no new warnings
 - [ ] Ran the app against a running GG with the Sonar sub-app enabled
 - [ ] A real preset switch fired and produced a toast
 - [ ] Preset ordering is still favourites-first, then alphabetical

@@ -1,6 +1,6 @@
-# Sonar Gaming Preset Switcher
+# Sonar Preset Switcher
 
-[![Build](https://github.com/Shadow-Hussein/SonarGamingPresetSwitcher/actions/workflows/build.yml/badge.svg)](https://github.com/Shadow-Hussein/SonarGamingPresetSwitcher/actions/workflows/build.yml)
+[![Build](https://github.com/Shadow-Hussein/SonarPresetSwitcher/actions/workflows/build.yml/badge.svg)](https://github.com/Shadow-Hussein/SonarPresetSwitcher/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
 ![.NET 10](https://img.shields.io/badge/.NET-10.0--windows-512BD4)
@@ -10,14 +10,14 @@ game launches, and restores a default preset when no mapped game is running.
 
 ## Install
 
-Grab the latest zip from [Releases](https://github.com/Shadow-Hussein/SonarGamingPresetSwitcher/releases),
+Grab the latest zip from [Releases](https://github.com/Shadow-Hussein/SonarPresetSwitcher/releases),
 extract it anywhere, and run `SonarPresetSwitcher.exe`. The release build is self-contained, so no .NET
 runtime install is needed. To build from source instead, see below.
 
 ## Build & run
 
 ```bash
-dotnet build "SonarGamingPresetSwitcher.sln"
+dotnet build "SonarPresetSwitcher.sln"
 ```
 
 The executable lands in `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/SonarPresetSwitcher.exe`.

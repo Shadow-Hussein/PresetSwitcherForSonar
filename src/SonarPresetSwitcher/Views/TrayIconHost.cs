@@ -45,7 +45,7 @@ public sealed class TrayIconHost : IDisposable
         _icon = new NotifyIcon
         {
             Icon = _appIcon ?? SystemIcons.Application,
-            Text = "Sonar Gaming Preset Switcher",
+            Text = "Sonar Preset Switcher",
             Visible = true,
             ContextMenuStrip = menu,
         };
