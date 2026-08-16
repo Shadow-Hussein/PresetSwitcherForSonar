@@ -8,7 +8,7 @@ You need the **.NET 10 SDK** and, for anything beyond a compile check, **SteelSe
 with the Sonar sub-app enabled.
 
 ```bash
-dotnet build "SonarGamingPresetSwitcher.sln" -c Debug
+dotnet build "SonarPresetSwitcher.sln" -c Debug
 ```
 
 The executable lands in `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/SonarPresetSwitcher.exe`.

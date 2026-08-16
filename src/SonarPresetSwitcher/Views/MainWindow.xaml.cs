@@ -8,7 +8,7 @@ namespace SonarPresetSwitcher.Views;
 
 public partial class MainWindow : Window
 {
-    private const string ProjectUrl = "https://github.com/Shadow-Hussein/SonarGamingPresetSwitcher";
+    private const string ProjectUrl = "https://github.com/Shadow-Hussein/SonarPresetSwitcher";
 
     private readonly MainViewModel _viewModel;
     private readonly DispatcherTimer _runningIndicatorTimer;
@@ -57,7 +57,7 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 this,
                 $"Could not open the browser ({ex.Message}).\n\n{ProjectUrl}",
-                "Sonar Gaming Preset Switcher",
+                "Sonar Preset Switcher",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }

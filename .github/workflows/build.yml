@@ -37,11 +37,11 @@ jobs:
       # There are zero NuGet dependencies, so restore is trivial — but keeping it explicit
       # means a future package addition does not silently change build semantics.
       - name: Restore
-        run: dotnet restore SonarGamingPresetSwitcher.sln
+        run: dotnet restore SonarPresetSwitcher.sln
 
       - name: Build (${{ matrix.configuration }})
         run: >
-          dotnet build SonarGamingPresetSwitcher.sln
+          dotnet build SonarPresetSwitcher.sln
           --configuration ${{ matrix.configuration }}
           --no-restore
           -warnaserror
@@ -55,6 +55,6 @@ jobs:
           if ($projects.Count -eq 0) {
             Write-Host '::notice::No test projects found — skipping.'
           } else {
-            dotnet test SonarGamingPresetSwitcher.sln `
+            dotnet test SonarPresetSwitcher.sln `
               --configuration ${{ matrix.configuration }} --no-build --verbosity normal
           }
