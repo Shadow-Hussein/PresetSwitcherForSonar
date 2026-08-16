@@ -93,6 +93,11 @@ The Sonar API is undocumented and private to SteelSeries; a GG update could chan
 surface is confined to `Services/SonarDiscovery.cs` and `Services/SonarClient.cs`, and the app degrades
 to a "Sonar not running" state rather than crashing.
 
+## About this project
+
+This app was fully coded with AI. WPF was chosen because it is the development environment the
+developer is most familiar with.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: there is no test project and no linter, so

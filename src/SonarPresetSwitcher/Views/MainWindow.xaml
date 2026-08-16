@@ -11,304 +11,398 @@
 
     <!-- Palette and control styles live in Views/Theme.xaml, merged into Application.Resources. -->
 
-    <Grid Margin="16">
+    <!--
+        Custom caption. CaptionHeight matches the title bar row, which is what gives us dragging, the
+        double-click maximize and the right-click system menu for free; GlassFrameThickness="0" stops
+        DWM painting the stock caption on top of it. The buttons opt back out of the caption with
+        IsHitTestVisibleInChrome, or the drag region would swallow their clicks.
+    -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="38"
+                      ResizeBorderThickness="6"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Grid>
+        <!--
+            A maximized WindowChrome window extends past the work area by its resize border, so the
+            content is inset by that much to bring it back on screen.
+        -->
+        <Grid.Style>
+            <Style TargetType="Grid">
+                <Setter Property="Margin" Value="0" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
+                                 Value="Maximized">
+                        <Setter Property="Margin" Value="7" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Grid.Style>
+
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="38" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Status -->
-        <Border Grid.Row="0" Style="{StaticResource Card}" Margin="0,0,0,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+        <!-- Title bar -->
+        <Grid Grid.Row="0" Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Image Source="pack://application:,,,/Assets/app.ico"
-                           Width="20" Height="20"
-                           Margin="0,0,10,0"
-                           VerticalAlignment="Center"
-                           RenderOptions.BitmapScalingMode="HighQuality" />
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0,0,0">
+                <Image Source="pack://application:,,,/Assets/app.ico"
+                       Width="16" Height="16"
+                       VerticalAlignment="Center"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+                <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                           Margin="10,0,0,0"
+                           FontSize="12"
+                           Foreground="{StaticResource Dim}" />
+            </StackPanel>
 
-                    <Ellipse Width="10" Height="10" VerticalAlignment="Center">
-                        <Ellipse.Style>
-                            <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="#EF4444" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Connected}" Value="True">
-                                        <Setter Property="Fill" Value="#22C55E" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Ellipse.Style>
-                    </Ellipse>
-                    <TextBlock Text="{Binding StatusText}" Margin="8,0,0,0" />
-                </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Margin="0,0,6,0"
+                        WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button Style="{StaticResource CaptionIconButton}"
+                        Content="{StaticResource GlyphGitHub}"
+                        Margin="0,0,8,0"
+                        Click="OnOpenProjectPage"
+                        ToolTip="Open the project on GitHub" />
+                <Button Style="{StaticResource CaptionButton}"
+                        Content="{StaticResource GlyphMinimize}"
+                        Click="OnMinimize"
+                        ToolTip="Minimize" />
+                <Button Click="OnMaximizeRestore">
+                    <!--
+                        Content comes from the style, never a local value: a local Content would win
+                        over the trigger and the glyph would never change back.
+                    -->
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+                            <Setter Property="Content" Value="{StaticResource GlyphMaximize}" />
+                            <Setter Property="ToolTip" Value="Maximize" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
+                                             Value="Maximized">
+                                    <Setter Property="Content" Value="{StaticResource GlyphRestore}" />
+                                    <Setter Property="ToolTip" Value="Restore" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Style="{StaticResource CaptionCloseButton}"
+                        Content="{StaticResource GlyphClose}"
+                        Click="OnCloseWindow"
+                        ToolTip="Close" />
+            </StackPanel>
+        </Grid>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                    <TextBlock Text="Game preset:" Foreground="{StaticResource Dim}" />
-                    <TextBlock Text="{Binding CurrentPresetText}"
-                               Margin="6,0,0,0"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource Accent}" />
-                    <TextBlock Text="{Binding ActiveMappingText}"
-                               Margin="14,0,0,0"
-                               Foreground="{StaticResource Dim}"
-                               FontSize="11" />
-                </StackPanel>
+        <Grid Grid.Row="1" Margin="16,0,16,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <CheckBox Content="Pause" IsChecked="{Binding MonitoringPaused}" Margin="0,0,12,0" />
-                    <Button Content="Refresh" Command="{Binding RefreshCommand}"
-                            ToolTip="Re-read My Presets from Sonar and the output devices from Windows." />
-                </StackPanel>
-            </Grid>
-        </Border>
+            <!-- Status -->
+            <Border Grid.Row="0" Style="{StaticResource Card}" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-        <!-- Mappings -->
-        <Border Grid.Row="1" Style="{StaticResource Card}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Image Source="pack://application:,,,/Assets/app.ico"
+                               Width="20" Height="20"
+                               Margin="0,0,10,0"
+                               VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
 
-                <Grid Grid.Row="0" Margin="0,0,0,10">
-                    <TextBlock Text="GAME → PRESET → OUTPUT DEVICE" Style="{StaticResource SectionHeader}" />
-                    <Button Content="Add mapping…"
-                            HorizontalAlignment="Right"
-                            Command="{Binding AddMappingCommand}" />
+                        <Ellipse Width="10" Height="10" VerticalAlignment="Center">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="#EF4444" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Connected}" Value="True">
+                                            <Setter Property="Fill" Value="#22C55E" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <TextBlock Text="{Binding StatusText}" Margin="8,0,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Text="Game preset:" Foreground="{StaticResource Dim}" />
+                        <TextBlock Text="{Binding CurrentPresetText}"
+                                   Margin="6,0,0,0"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource Accent}" />
+                        <TextBlock Text="{Binding ActiveMappingText}"
+                                   Margin="14,0,0,0"
+                                   Foreground="{StaticResource Dim}"
+                                   FontSize="11" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <CheckBox Content="Pause" IsChecked="{Binding MonitoringPaused}" Margin="0,0,12,0" />
+                        <Button Content="Refresh" Command="{Binding RefreshCommand}"
+                                ToolTip="Re-read My Presets from Sonar and the output devices from Windows." />
+                    </StackPanel>
                 </Grid>
+            </Border>
 
-                <Grid Grid.Row="1">
-                    <TextBlock Text="No mappings yet. Click “Add mapping…” to bind a game to one of your Sonar presets."
-                               Foreground="{StaticResource Dim}"
-                               TextWrapping="Wrap"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                <Setter Property="Visibility" Value="Visible" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasMappings}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Mappings}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type vm:MappingRowViewModel}">
-                                    <Border Background="#12141A"
-                                            BorderBrush="{StaticResource Line}"
-                                            BorderThickness="1"
-                                            CornerRadius="6"
-                                            Padding="12,10"
-                                            Margin="0,0,0,8">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="200" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="200" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <CheckBox Grid.Column="0"
-                                                      IsChecked="{Binding Enabled}"
-                                                      ToolTip="Enable this mapping"
-                                                      Margin="0,0,10,0" />
-
-                                            <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
-                                                <Ellipse.Style>
-                                                    <Style TargetType="Ellipse">
-                                                        <Setter Property="Fill" Value="#3A3F4B" />
-                                                        <Setter Property="ToolTip" Value="Not running" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsRunning}" Value="True">
-                                                                <Setter Property="Fill" Value="#22C55E" />
-                                                                <Setter Property="ToolTip" Value="Running" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Ellipse.Style>
-                                            </Ellipse>
-
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,10,0">
-                                                <TextBlock Text="{Binding DisplayName}"
-                                                           Foreground="{StaticResource Fg}"
-                                                           FontWeight="SemiBold"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding ProcessLabel}"
-                                                           Foreground="{StaticResource Dim}"
-                                                           FontSize="11" />
-                                            </StackPanel>
-
-                                            <ComboBox Grid.Column="3"
-                                                      ItemsSource="{Binding DataContext.Presets, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                      SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
-                                                      ItemTemplate="{StaticResource PresetItem}"
-                                                      TextSearch.TextPath="Name"
-                                                      ToolTip="Sonar Game preset applied while this app is running.&#10;The list is long — type the first letters to jump." />
-
-                                            <TextBlock Grid.Column="4"
-                                                       Text="⚠"
-                                                       Margin="8,0,0,0"
-                                                       FontSize="15"
-                                                       Foreground="#F59E0B"
-                                                       ToolTip="{Binding MissingPresetTooltip}"
-                                                       Visibility="{Binding PresetMissing, Converter={StaticResource BoolToVis}}" />
-
-                                            <TextBlock Grid.Column="5"
-                                                       Text="🔊"
-                                                       Margin="12,0,6,0"
-                                                       FontSize="13"
-                                                       Foreground="{StaticResource Dim}"
-                                                       ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                            <ComboBox Grid.Column="6"
-                                                      ItemsSource="{Binding DataContext.MappingOutputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                      SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
-                                                      ItemTemplate="{StaticResource AudioDeviceItem}"
-                                                      TextSearch.TextPath="Name"
-                                                      IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                      ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                            <Button Grid.Column="7"
-                                                    Content="Remove"
-                                                    Margin="10,0,0,0"
-                                                    Padding="10,5"
-                                                    Command="{Binding DataContext.RemoveMappingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </Grid>
-            </Grid>
-        </Border>
-
-        <!-- Settings -->
-        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,12,0,0">
-            <StackPanel>
-                <TextBlock Text="SETTINGS" Style="{StaticResource SectionHeader}" />
+            <!-- Mappings -->
+            <Border Grid.Row="1" Style="{StaticResource Card}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="220" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="220" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Default preset" Margin="0,0,10,0" />
-                    <ComboBox Grid.Row="0" Grid.Column="1"
-                              ItemsSource="{Binding Presets}"
-                              SelectedItem="{Binding DefaultPreset, Mode=TwoWay}"
-                              ItemTemplate="{StaticResource PresetItem}"
-                              TextSearch.TextPath="Name"
-                              ToolTip="Restored when no mapped game is running.&#10;Type the first letters to jump." />
-
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Default output device" Margin="20,0,10,0" />
-                    <ComboBox Grid.Row="0" Grid.Column="3"
-                              ItemsSource="{Binding OutputDevices}"
-                              SelectedItem="{Binding DefaultOutputDevice, Mode=TwoWay}"
-                              ItemTemplate="{StaticResource AudioDeviceItem}"
-                              TextSearch.TextPath="Name"
-                              IsEnabled="{Binding AudioRoutingSupported}"
-                              ToolTip="{Binding OutputDeviceTooltip}" />
-
-                    <CheckBox Grid.Row="1" Grid.Column="0"
-                              Content="Hold Windows default"
-                              IsChecked="{Binding KeepWindowsDefault}"
-                              IsEnabled="{Binding KeepWindowsDefaultSupported}"
-                              VerticalAlignment="Center"
-                              Margin="0,12,10,0"
-                              ToolTip="{Binding KeepWindowsDefaultTooltip}" />
-                    <ComboBox Grid.Row="1" Grid.Column="1"
-                              ItemsSource="{Binding SystemDefaultDevices}"
-                              SelectedItem="{Binding KeepWindowsDefaultDevice, Mode=TwoWay}"
-                              ItemTemplate="{StaticResource AudioDeviceItem}"
-                              TextSearch.TextPath="Name"
-                              IsEnabled="{Binding KeepWindowsDefaultSupported}"
-                              Margin="0,12,0,0"
-                              ToolTip="{Binding KeepWindowsDefaultTooltip}" />
-
-                    <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3"
-                               Text="Puts the Windows default playback device back when SteelSeries GG takes it at startup."
-                               Foreground="{StaticResource Dim}"
-                               FontSize="11"
-                               TextTrimming="CharacterEllipsis"
-                               VerticalAlignment="Center"
-                               Margin="20,12,0,0"
-                               ToolTip="{Binding KeepWindowsDefaultTooltip}" />
-
-                    <StackPanel Grid.Row="2" Grid.ColumnSpan="5"
-                                Orientation="Horizontal"
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="GAME → PRESET → OUTPUT DEVICE" Style="{StaticResource SectionHeader}" />
+                        <Button Content="Add mapping…"
                                 HorizontalAlignment="Right"
-                                Margin="0,12,0,0">
-                        <CheckBox Content="Show notifications"
-                                  IsChecked="{Binding ShowNotifications}"
-                                  Margin="0,0,16,0"
-                                  ToolTip="Pop a desktop notification whenever the preset is switched." />
-                        <CheckBox Content="Start with Windows" IsChecked="{Binding StartWithWindows}" Margin="0,0,16,0" />
-                        <CheckBox Content="Minimize to tray" IsChecked="{Binding MinimizeToTray}" Margin="0,0,16,0" />
-                        <TextBlock Text="Poll every" Foreground="{StaticResource Dim}" Margin="0,0,6,0" />
-                        <ComboBox SelectedValue="{Binding PollIntervalSeconds, Mode=TwoWay}"
-                                  SelectedValuePath="Tag"
-                                  Width="78">
-                            <ComboBoxItem Content="1 s" Tag="1" />
-                            <ComboBoxItem Content="2 s" Tag="2" />
-                            <ComboBoxItem Content="5 s" Tag="5" />
-                            <ComboBoxItem Content="10 s" Tag="10" />
-                        </ComboBox>
-                    </StackPanel>
-                </Grid>
-            </StackPanel>
-        </Border>
+                                Command="{Binding AddMappingCommand}" />
+                    </Grid>
 
-        <!-- Activity -->
-        <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0" Height="128">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="ACTIVITY" Style="{StaticResource SectionHeader}" />
-                <ListBox Grid.Row="1"
-                         ItemsSource="{Binding ActivityLog}"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         Foreground="{StaticResource Dim}"
-                         FontFamily="Consolas"
-                         FontSize="11"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="Padding" Value="0,1" />
-                            <Setter Property="Background" Value="Transparent" />
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                </ListBox>
-            </Grid>
-        </Border>
+                    <Grid Grid.Row="1">
+                        <TextBlock Text="No mappings yet. Click “Add mapping…” to bind a game to one of your Sonar presets."
+                                   Foreground="{StaticResource Dim}"
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasMappings}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Mappings}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:MappingRowViewModel}">
+                                        <Border Background="#12141A"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="12,10"
+                                                Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="200" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="200" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding Enabled}"
+                                                          ToolTip="Enable this mapping"
+                                                          Margin="0,0,10,0" />
+
+                                                <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="#3A3F4B" />
+                                                            <Setter Property="ToolTip" Value="Not running" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Fill" Value="#22C55E" />
+                                                                    <Setter Property="ToolTip" Value="Running" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               Foreground="{StaticResource Fg}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ProcessLabel}"
+                                                               Foreground="{StaticResource Dim}"
+                                                               FontSize="11" />
+                                                </StackPanel>
+
+                                                <ComboBox Grid.Column="3"
+                                                          ItemsSource="{Binding DataContext.Presets, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource PresetItem}"
+                                                          TextSearch.TextPath="Name"
+                                                          ToolTip="Sonar Game preset applied while this app is running.&#10;The list is long — type the first letters to jump." />
+
+                                                <TextBlock Grid.Column="4"
+                                                           Text="⚠"
+                                                           Margin="8,0,0,0"
+                                                           FontSize="15"
+                                                           Foreground="#F59E0B"
+                                                           ToolTip="{Binding MissingPresetTooltip}"
+                                                           Visibility="{Binding PresetMissing, Converter={StaticResource BoolToVis}}" />
+
+                                                <TextBlock Grid.Column="5"
+                                                           Text="🔊"
+                                                           Margin="12,0,6,0"
+                                                           FontSize="13"
+                                                           Foreground="{StaticResource Dim}"
+                                                           ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <ComboBox Grid.Column="6"
+                                                          ItemsSource="{Binding DataContext.MappingOutputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource AudioDeviceItem}"
+                                                          TextSearch.TextPath="Name"
+                                                          IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <Button Grid.Column="7"
+                                                        Content="Remove"
+                                                        Margin="10,0,0,0"
+                                                        Padding="10,5"
+                                                        Command="{Binding DataContext.RemoveMappingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- Settings -->
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Text="SETTINGS" Style="{StaticResource SectionHeader}" />
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Default preset" Margin="0,0,10,0" />
+                        <ComboBox Grid.Row="0" Grid.Column="1"
+                                  ItemsSource="{Binding Presets}"
+                                  SelectedItem="{Binding DefaultPreset, Mode=TwoWay}"
+                                  ItemTemplate="{StaticResource PresetItem}"
+                                  TextSearch.TextPath="Name"
+                                  ToolTip="Restored when no mapped game is running.&#10;Type the first letters to jump." />
+
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Default output device for mapped apps" Margin="20,0,10,0" />
+                        <ComboBox Grid.Row="0" Grid.Column="3"
+                                  ItemsSource="{Binding OutputDevices}"
+                                  SelectedItem="{Binding DefaultOutputDevice, Mode=TwoWay}"
+                                  ItemTemplate="{StaticResource AudioDeviceItem}"
+                                  TextSearch.TextPath="Name"
+                                  IsEnabled="{Binding AudioRoutingSupported}"
+                                  ToolTip="{Binding OutputDeviceTooltip}" />
+
+                        <CheckBox Grid.Row="1" Grid.Column="0"
+                                  Content="Hold Windows default"
+                                  IsChecked="{Binding KeepWindowsDefault}"
+                                  IsEnabled="{Binding KeepWindowsDefaultSupported}"
+                                  VerticalAlignment="Center"
+                                  Margin="0,12,10,0"
+                                  ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+                        <ComboBox Grid.Row="1" Grid.Column="1"
+                                  ItemsSource="{Binding SystemDefaultDevices}"
+                                  SelectedItem="{Binding KeepWindowsDefaultDevice, Mode=TwoWay}"
+                                  ItemTemplate="{StaticResource AudioDeviceItem}"
+                                  TextSearch.TextPath="Name"
+                                  IsEnabled="{Binding KeepWindowsDefaultSupported}"
+                                  Margin="0,12,0,0"
+                                  ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3"
+                                   Text="Puts the Windows default playback device back when SteelSeries GG takes it at startup."
+                                   Foreground="{StaticResource Dim}"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"
+                                   Margin="20,12,0,0"
+                                   ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+
+                        <StackPanel Grid.Row="2" Grid.ColumnSpan="5"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,12,0,0">
+                            <CheckBox Content="Show notifications"
+                                      IsChecked="{Binding ShowNotifications}"
+                                      Margin="0,0,16,0"
+                                      ToolTip="Pop a desktop notification whenever the preset is switched." />
+                            <CheckBox Content="Start with Windows" IsChecked="{Binding StartWithWindows}" Margin="0,0,16,0" />
+                            <CheckBox Content="Minimize to tray" IsChecked="{Binding MinimizeToTray}" Margin="0,0,16,0" />
+                            <TextBlock Text="Poll every" Foreground="{StaticResource Dim}" Margin="0,0,6,0" />
+                            <ComboBox SelectedValue="{Binding PollIntervalSeconds, Mode=TwoWay}"
+                                      SelectedValuePath="Tag"
+                                      Width="78">
+                                <ComboBoxItem Content="1 s" Tag="1" />
+                                <ComboBoxItem Content="2 s" Tag="2" />
+                                <ComboBoxItem Content="5 s" Tag="5" />
+                                <ComboBoxItem Content="10 s" Tag="10" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Activity -->
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0" Height="128">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="ACTIVITY" Style="{StaticResource SectionHeader}" />
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding ActivityLog}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Foreground="{StaticResource Dim}"
+                             FontFamily="Consolas"
+                             FontSize="11"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0,1" />
+                                <Setter Property="Background" Value="Transparent" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

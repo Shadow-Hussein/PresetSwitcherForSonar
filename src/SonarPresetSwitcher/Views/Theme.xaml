@@ -22,10 +22,22 @@
     <SolidColorBrush x:Key="Scroll" Color="#4A5160" />
     <SolidColorBrush x:Key="ScrollHover" Color="#6E7788" />
 
-    <Geometry x:Key="ArrowUp">M 0,5 L 8,5 L 4,0 Z</Geometry>
-    <Geometry x:Key="ArrowDown">M 0,0 L 8,0 L 4,5 Z</Geometry>
-    <Geometry x:Key="ArrowLeft">M 5,0 L 5,8 L 0,4 Z</Geometry>
-    <Geometry x:Key="ArrowRight">M 0,0 L 0,8 L 5,4 Z</Geometry>
+    <Geometry x:Key="ArrowUp">M 0,5 L 7,5 L 3.5,0 Z</Geometry>
+    <Geometry x:Key="ArrowDown">M 0,0 L 7,0 L 3.5,5 Z</Geometry>
+    <Geometry x:Key="ArrowLeft">M 5,0 L 5,7 L 0,3.5 Z</Geometry>
+    <Geometry x:Key="ArrowRight">M 0,0 L 0,7 L 5,3.5 Z</Geometry>
+
+    <!--
+        Caption glyphs, drawn on a 10x10 box and stroked (not filled) so they stay crisp at the hairline
+        weight Windows 11 uses. The half-pixel offsets put the 1px strokes on pixel centres.
+    -->
+    <Geometry x:Key="GlyphMinimize">M 0,5 H 10</Geometry>
+    <Geometry x:Key="GlyphMaximize">M 0.5,0.5 H 9.5 V 9.5 H 0.5 Z</Geometry>
+    <Geometry x:Key="GlyphRestore">M 0.5,2.5 H 7.5 V 9.5 H 0.5 Z M 2.5,2.5 V 0.5 H 9.5 V 7.5 H 7.5</Geometry>
+    <Geometry x:Key="GlyphClose">M 0.5,0.5 L 9.5,9.5 M 9.5,0.5 L 0.5,9.5</Geometry>
+
+    <!-- The GitHub mark, filled rather than stroked, on its native 16x16 box. -->
+    <Geometry x:Key="GlyphGitHub">M 8,0 C 3.58,0 0,3.58 0,8 c 0,3.54 2.29,6.53 5.47,7.59 0.4,0.07 0.55,-0.17 0.55,-0.38 0,-0.19 -0.01,-0.82 -0.01,-1.49 -2.01,0.37 -2.53,-0.49 -2.69,-0.94 -0.09,-0.23 -0.48,-0.94 -0.82,-1.13 -0.28,-0.15 -0.68,-0.52 -0.01,-0.53 0.63,-0.01 1.08,0.58 1.23,0.82 0.72,1.21 1.87,0.87 2.33,0.66 0.07,-0.52 0.28,-0.87 0.51,-1.07 -1.78,-0.2 -3.64,-0.89 -3.64,-3.95 0,-0.87 0.31,-1.59 0.82,-2.15 -0.08,-0.2 -0.36,-1.02 0.08,-2.12 0,0 0.67,-0.21 2.2,0.82 0.64,-0.18 1.32,-0.27 2,-0.27 0.68,0 1.36,0.09 2,0.27 1.53,-1.04 2.2,-0.82 2.2,-0.82 0.44,1.1 0.16,1.92 0.08,2.12 0.51,0.56 0.82,1.27 0.82,2.15 0,3.07 -1.87,3.75 -3.65,3.95 0.29,0.25 0.54,0.73 0.54,1.48 0,1.07 -0.01,1.93 -0.01,2.2 0,0.21 0.15,0.46 0.55,0.38 A 8.012,8.012 0 0 0 16,8 C 16,3.58 12.42,0 8,0 Z</Geometry>
 
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Fg}" />
@@ -367,7 +379,7 @@
                 <ControlTemplate TargetType="Thumb">
                     <Border x:Name="Bd"
                             Background="{StaticResource Scroll}"
-                            CornerRadius="5"
+                            CornerRadius="2.5"
                             Margin="2"
                             SnapsToDevicePixels="True" />
                     <ControlTemplate.Triggers>
@@ -392,8 +404,8 @@
                 <ControlTemplate TargetType="RepeatButton">
                     <Border x:Name="Bd"
                             Background="Transparent"
-                            CornerRadius="5"
-                            Margin="2"
+                            CornerRadius="2.5"
+                            Margin="1"
                             SnapsToDevicePixels="True">
                         <Path x:Name="Glyph"
                               Data="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
@@ -431,7 +443,7 @@
 
     <Style TargetType="ScrollBar">
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Width" Value="14" />
+        <Setter Property="Width" Value="9" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
@@ -474,7 +486,7 @@
             <!-- Without this the horizontal bar would lay itself out with the vertical row grid. -->
             <Trigger Property="Orientation" Value="Horizontal">
                 <Setter Property="Width" Value="Auto" />
-                <Setter Property="Height" Value="14" />
+                <Setter Property="Height" Value="9" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ScrollBar">
@@ -514,6 +526,84 @@
                 </Setter>
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!--
+        Title bar. MainWindow draws its own caption via WindowChrome, so these are the replacements for
+        the system caption buttons.
+
+        The hover and pressed states live in Style.Triggers rather than the ControlTemplate: template
+        triggers cannot be overridden through BasedOn, and the close button needs a different hover
+        colour from the rest. Background and Foreground are template-bound so those setters reach the
+        border and the glyph.
+    -->
+    <Style x:Key="CaptionButton" TargetType="Button">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource Dim}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="6"
+                            SnapsToDevicePixels="True">
+                        <Path Data="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource Control}" />
+                <Setter Property="Foreground" Value="{StaticResource Fg}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Background" Value="#2A1A0E" />
+                <Setter Property="Foreground" Value="{StaticResource Accent}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Close keeps the Windows red hover; anything subtler reads as "nothing happened". -->
+    <Style x:Key="CaptionCloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#E81123" />
+                <Setter Property="Foreground" Value="White" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Background" Value="#B10E1B" />
+                <Setter Property="Foreground" Value="White" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Same button, filled glyph: the GitHub mark is a solid shape, not an outline. -->
+    <Style x:Key="CaptionIconButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="6"
+                            SnapsToDevicePixels="True">
+                        <Path Data="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                              Fill="{TemplateBinding Foreground}"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!--
