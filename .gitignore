@@ -1,0 +1,48 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+[Ww][Ii][Nn]32/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+publish/
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.rsuser
+
+# MSBuild / NuGet
+*.binlog
+project.lock.json
+project.fragment.lock.json
+*.nuget.props
+*.nuget.targets
+packages/
+
+# Debug symbols and crash dumps
+*.pdb
+*.mdb
+*.dmp
+*.stackdump
+
+# OS cruft
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Local settings that must never be committed
+settings.json.local
+*.local.json

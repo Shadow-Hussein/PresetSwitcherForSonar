@@ -1,0 +1,89 @@
+name: Bug report
+description: Something misbehaves — a preset does not switch, audio routing fails, the app crashes.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The Sonar API is undocumented and private to SteelSeries, so a GG update can break
+        discovery or switching outright. The GG version below is usually the decisive detail.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did the app do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Map Rocket League to the "Competitive" preset
+        2. Launch the game
+        3. Sonar stays on the previous preset
+    validations:
+      required: true
+
+  - type: textarea
+    id: activity-log
+    attributes:
+      label: Activity log
+      description: >
+        The lines from the app's activity list around the failure. Paste them as-is —
+        they name the failing call.
+      render: text
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      placeholder: v1.0.0, or the commit you built from
+    validations:
+      required: true
+
+  - type: input
+    id: gg-version
+    attributes:
+      label: SteelSeries GG version
+      description: GG → Settings → About
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: 'Windows 11 Pro 24H2 (26100.x) — `winver` shows this'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part is affected?
+      options:
+        - Preset switching
+        - Sonar discovery / connection
+        - Per-app audio routing
+        - Game detection
+        - Tray icon / notifications
+        - Settings persistence
+        - UI
+        - Not sure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: SteelSeries GG is running with the Sonar sub-app enabled.
+          required: true
+        - label: The mapped preset still exists in Sonar and is still starred as a favourite.
+          required: true
+        - label: Only one instance of the app is running (a second launch exits silently by design).
+          required: true

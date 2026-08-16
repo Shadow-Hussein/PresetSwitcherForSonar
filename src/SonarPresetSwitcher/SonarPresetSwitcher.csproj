@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>SonarPresetSwitcher</RootNamespace>
+    <AssemblyName>SonarPresetSwitcher</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WFO0003 tells WinForms apps to set DPI mode via ApplicationConfiguration. This is a WPF app
+         that only borrows NotifyIcon, so the manifest is the correct place for DPI awareness. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms is referenced only for NotifyIcon. Dropping its implicit global using keeps
+         Application, MessageBox and friends unambiguously WPF types across the project. -->
+    <Using Remove="System.Windows.Forms" />
+
+    <!-- Embedded rather than copied: the publish profile is single-file, so a loose Assets folder
+         would not exist next to the exe for the tray icon to load from. -->
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+</Project>

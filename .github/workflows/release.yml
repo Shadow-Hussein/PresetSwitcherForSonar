@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 1.0.0) — no tag is created'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $v = '${{ inputs.version }}'.TrimStart('v')
+          } else {
+            $v = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          if ($v -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+            throw "Version '$v' is not in the form MAJOR.MINOR.PATCH."
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Deliberately not using Properties/PublishProfiles/FolderProfile.pubxml: that profile
+      # hard-codes a local PublishDir. The runtime settings below mirror it exactly otherwise —
+      # self-contained, single-file, win-x86 (x86 so the build runs on x86 and x64 alike).
+      - name: Publish (win-x86, self-contained, single-file)
+        run: >
+          dotnet publish src/SonarPresetSwitcher/SonarPresetSwitcher.csproj
+          --configuration Release
+          --runtime win-x86
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:PublishReadyToRun=false
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:AssemblyVersion=${{ steps.version.outputs.version }}.0
+          -p:FileVersion=${{ steps.version.outputs.version }}.0
+          --output publish
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86"
+          Compress-Archive -Path publish\* -DestinationPath "$name.zip" -Force
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash
+          "$hash  $name.zip" | Out-File "$name.zip.sha256" -Encoding ascii
+          Write-Host "SHA256: $hash"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86
+          path: |
+            *.zip
+            *.zip.sha256
+          if-no-files-found: error
+
+      # Only a real tag push cuts a GitHub Release; workflow_dispatch stops at the artifact above.
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.version }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            *.zip
+            *.zip.sha256
+          body: |
+            ### Install
+
+            Download the zip, extract it anywhere, and run `SonarPresetSwitcher.exe`.
+            The build is self-contained — no .NET runtime install required.
+
+            Requires Windows 10/11 with SteelSeries GG running and the Sonar sub-app enabled.
+
+            Verify the download against the accompanying `.sha256` file.

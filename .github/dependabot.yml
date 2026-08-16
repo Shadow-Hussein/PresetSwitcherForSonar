@@ -1,0 +1,22 @@
+version: 2
+
+updates:
+  # The app itself has zero NuGet dependencies (BCL only), so the actions in CI are
+  # the only third-party surface worth tracking.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    labels: [dependencies, ci]
+
+  # Inert until a PackageReference is added — then it starts working with no further setup.
+  - package-ecosystem: nuget
+    directory: /src/SonarPresetSwitcher
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: deps
+    labels: [dependencies]
+    open-pull-requests-limit: 5

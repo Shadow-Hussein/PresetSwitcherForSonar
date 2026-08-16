@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a capability the app does not have yet.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you hit, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should it do?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app would this touch?
+      options:
+        - Preset switching rules
+        - Per-app audio routing
+        - Game detection
+        - Tray / notifications
+        - Settings
+        - UI
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Including anything GG or Windows already does that comes close.
