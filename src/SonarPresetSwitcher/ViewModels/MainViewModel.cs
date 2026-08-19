@@ -325,40 +325,41 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Rebuilds both device pickers. Devices referenced by a saved mapping but missing from the
-    /// enumeration are kept as "(not connected)" entries, so an unplugged headset shows the user what
-    /// their setting still says instead of silently blanking the combo.
+    /// Rebuilds the three device pickers.
+    ///
+    /// A saved id that no longer enumerates does not mean the device is gone: Sonar re-creates its
+    /// virtual endpoints under new ids whenever GG rebuilds its driver, and a headset moved to another
+    /// USB port looks identical. <see cref="RepairSavedDeviceReferences"/> re-points such a setting at
+    /// the live endpoint carrying the same name — the same recovery <see cref="DefaultDeviceGuard"/>
+    /// performs for itself, done here so it also reaches settings.json.
+    ///
+    /// Whatever is still unresolved after that stays visible as a "(not connected)" entry, so an
+    /// unplugged headset shows the user what their setting says instead of silently blanking the combo.
+    /// Each picker only carries its own: choosing a device to hold should not be a list of every dead
+    /// endpoint some mapping still remembers.
     /// </summary>
     private void ApplyOutputDevices(IReadOnlyList<AudioDevice> devices)
     {
+        var known = devices.ToDictionary(d => d.Id, StringComparer.OrdinalIgnoreCase);
+        var repaired = RepairSavedDeviceReferences(devices, known);
+
         _loading = true;
         try
         {
-            var known = devices.ToDictionary(d => d.Id, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var (id, name) in SavedDeviceReferences())
-            {
-                if (!string.IsNullOrEmpty(id) && !known.ContainsKey(id))
-                    known[id] = new AudioDevice(id, $"{(string.IsNullOrWhiteSpace(name) ? "Unknown device" : name)} (not connected)");
-            }
-
-            var ordered = known.Values.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
-
             OutputDevices.Clear();
             OutputDevices.Add(AudioDevice.SystemDefault);
+            foreach (var device in WithMissing(devices, known, [DefaultOutputReference()]))
+                OutputDevices.Add(device);
 
             MappingOutputDevices.Clear();
             MappingOutputDevices.Add(AudioDevice.Inherit);
             MappingOutputDevices.Add(AudioDevice.SystemDefault);
+            foreach (var device in WithMissing(devices, known, MappingReferences()))
+                MappingOutputDevices.Add(device);
 
             SystemDefaultDevices.Clear();
-
-            foreach (var device in ordered)
-            {
-                OutputDevices.Add(device);
-                MappingOutputDevices.Add(device);
+            foreach (var device in WithMissing(devices, known, [KeepWindowsDefaultReference()]))
                 SystemDefaultDevices.Add(device);
-            }
 
             foreach (var row in Mappings)
                 row.SyncOutputDevice(MappingOutputDevices);
@@ -374,13 +375,108 @@ public sealed class MainViewModel : ObservableObject
         {
             _loading = false;
         }
+
+        // Deliberately outside the _loading window: this is the one write here that is a real change to
+        // the settings and has to reach the coordinator and the guard, not just the combo boxes.
+        if (repaired)
+            Persist();
     }
 
-    private IEnumerable<(string Id, string Name)> SavedDeviceReferences()
+    /// <summary>
+    /// The live devices, plus a "(not connected)" placeholder for each of <paramref name="referenced"/>
+    /// that is not among them. Sentinels are added by the caller and are not passed through here.
+    /// </summary>
+    private static List<AudioDevice> WithMissing(
+        IReadOnlyList<AudioDevice> live,
+        IReadOnlyDictionary<string, AudioDevice> known,
+        IEnumerable<(string Id, string Name)> referenced)
     {
-        yield return (_settings.DefaultOutputDeviceId, _settings.DefaultOutputDeviceName);
-        yield return (_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
+        var result = new List<AudioDevice>(live);
+        var placeholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        foreach (var (id, name) in referenced)
+        {
+            if (string.IsNullOrEmpty(id) || id == AudioDevice.InheritId || known.ContainsKey(id))
+                continue;
+
+            if (!placeholders.Add(id))
+                continue;
+
+            var label = AudioDevice.CleanName(name);
+            result.Add(new AudioDevice(id, label.Length == 0 ? "Unknown device" : label) { IsMissing = true });
+        }
+
+        return result.OrderBy(d => d.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Brings every saved device reference back in line with what Windows currently reports: the name is
+    /// refreshed from the live endpoint, and an id that no longer resolves is re-pointed at the endpoint
+    /// carrying the same name. Returns true when anything moved, in which case the caller saves.
+    /// </summary>
+    private bool RepairSavedDeviceReferences(
+        IReadOnlyList<AudioDevice> devices, IReadOnlyDictionary<string, AudioDevice> known)
+    {
+        (string Id, string Name) Repair(string id, string name)
+        {
+            var cleaned = AudioDevice.CleanName(name);
+
+            if (string.IsNullOrEmpty(id) || id == AudioDevice.InheritId)
+                return (id, cleaned);
+
+            if (!known.TryGetValue(id, out var live))
+            {
+                var moved = AudioDeviceService.FindUniqueId(devices, cleaned);
+                if (moved is null)
+                    return (id, cleaned);
+
+                id = moved;
+                live = known[moved];
+            }
+
+            return (id, live.Name);
+        }
+
+        var changed = false;
+
+        var (defaultId, defaultName) = Repair(_settings.DefaultOutputDeviceId, _settings.DefaultOutputDeviceName);
+        if (defaultId != _settings.DefaultOutputDeviceId || defaultName != _settings.DefaultOutputDeviceName)
+        {
+            _settings.DefaultOutputDeviceId = defaultId;
+            _settings.DefaultOutputDeviceName = defaultName;
+            changed = true;
+        }
+
+        var (holdId, holdName) = Repair(_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
+        if (holdId != _settings.KeepWindowsDefaultDeviceId || holdName != _settings.KeepWindowsDefaultDeviceName)
+        {
+            _settings.KeepWindowsDefaultDeviceId = holdId;
+            _settings.KeepWindowsDefaultDeviceName = holdName;
+            changed = true;
+        }
+
+        foreach (var mapping in _settings.Mappings)
+        {
+            var (id, name) = Repair(mapping.OutputDeviceId, mapping.OutputDeviceName);
+            if (id == mapping.OutputDeviceId && name == mapping.OutputDeviceName)
+                continue;
+
+            mapping.OutputDeviceId = id;
+            mapping.OutputDeviceName = name;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private (string Id, string Name) DefaultOutputReference() =>
+        (_settings.DefaultOutputDeviceId, _settings.DefaultOutputDeviceName);
+
+    private (string Id, string Name) KeepWindowsDefaultReference() =>
+        (_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
+
+    private IEnumerable<(string Id, string Name)> MappingReferences()
+    {
         foreach (var mapping in _settings.Mappings)
         {
             if (!string.Equals(mapping.OutputDeviceId, AudioDevice.InheritId, StringComparison.Ordinal))

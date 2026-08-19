@@ -103,6 +103,14 @@ public sealed class DefaultDeviceGuard : IDisposable
 
     private string _lastTarget = "";
 
+    /// <summary>
+    /// The saved id that stopped resolving, and the live endpoint carrying the same name that took its
+    /// place. Empty until <see cref="Enforce"/> has had to look one up. See <see cref="CurrentTarget"/>.
+    /// </summary>
+    private string _resolvedFrom = "";
+
+    private string _resolvedTo = "";
+
     public DefaultDeviceGuard(AudioDeviceService devices, ProcessWatcher watcher, AppSettings settings)
     {
         _devices = devices;
@@ -180,6 +188,8 @@ public sealed class DefaultDeviceGuard : IDisposable
             _refusingSince = null;
             _refusalLogged = false;
             _targetMissingLogged = false;
+            _resolvedFrom = "";
+            _resolvedTo = "";
             _corrections.Clear();
             _lastAnnounce = DateTime.MinValue;
             _burstUntil = DateTime.UtcNow + BurstDuration;
@@ -314,7 +324,7 @@ public sealed class DefaultDeviceGuard : IDisposable
         if (!Enabled(settings))
             return;
 
-        var target = settings.KeepWindowsDefaultDeviceId;
+        var target = CurrentTarget(settings);
 
         var before = _devices.GetDefaultRenderHold(target);
         if (before == DefaultDeviceHold.Both)
@@ -325,13 +335,31 @@ public sealed class DefaultDeviceGuard : IDisposable
             return;
         }
 
-        // Unplugged or disabled: leave Windows alone rather than pushing it at a dead endpoint. This
-        // also covers the machine with no default at all — every endpoint disabled means the target is
-        // not active either.
+        // Unplugged or disabled — or simply wearing a different id than the one that was saved. Sonar's
+        // virtual endpoints are re-created with a new id whenever GG rebuilds its driver, and by id alone
+        // that is indistinguishable from the device being gone, which is how a working setting turns into
+        // a permanent "waiting for…". The saved name is the only thing that survives, so it decides.
         if (!_devices.IsRenderDeviceActive(target))
         {
-            AnnounceTargetMissing(settings);
-            return;
+            var moved = _devices.FindRenderDeviceIdByName(AudioDevice.CleanName(settings.KeepWindowsDefaultDeviceName));
+
+            if (moved is null)
+            {
+                // Really not there. Leave Windows alone rather than pushing it at a dead endpoint; this
+                // also covers the machine with no default at all, where nothing is active either.
+                AnnounceTargetMissing(settings);
+                return;
+            }
+
+            lock (_gate)
+            {
+                _resolvedFrom = settings.KeepWindowsDefaultDeviceId;
+                _resolvedTo = moved;
+                _targetMissingLogged = false;
+            }
+
+            Activity?.Invoke($"\"{TargetName(settings)}\" is back under a new device id — following it.");
+            target = moved;
         }
 
         // Read only when a correction is actually due, so the log can name what took it. Costs one
@@ -561,7 +589,27 @@ public sealed class DefaultDeviceGuard : IDisposable
     private static string TargetName(AppSettings settings) =>
         string.IsNullOrWhiteSpace(settings.KeepWindowsDefaultDeviceName)
             ? settings.KeepWindowsDefaultDeviceId
-            : settings.KeepWindowsDefaultDeviceName;
+            : AudioDevice.CleanName(settings.KeepWindowsDefaultDeviceName);
+
+    /// <summary>
+    /// The endpoint to actually write. Normally the saved id; once that id has been seen to die and the
+    /// saved name has been found on a live endpoint, the one it moved to.
+    ///
+    /// The migration is remembered against the id it came from, so a later edit in the UI — which
+    /// replaces the saved id outright — drops it rather than quietly overriding the user's new choice.
+    /// Nothing is persisted from here: the view model owns settings.json, and this has to keep working
+    /// under --minimized, where the view model never runs.
+    /// </summary>
+    private string CurrentTarget(AppSettings settings)
+    {
+        lock (_gate)
+        {
+            return _resolvedTo.Length > 0 &&
+                   string.Equals(_resolvedFrom, settings.KeepWindowsDefaultDeviceId, StringComparison.OrdinalIgnoreCase)
+                ? _resolvedTo
+                : settings.KeepWindowsDefaultDeviceId;
+        }
+    }
 
     public void Dispose()
     {

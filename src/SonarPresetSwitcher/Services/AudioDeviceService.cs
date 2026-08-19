@@ -372,6 +372,45 @@ public sealed class AudioDeviceService
     }
 
     /// <summary>
+    /// Id of the single active render endpoint carrying this friendly name, or null when nothing
+    /// matches — or when more than one thing does.
+    ///
+    /// A saved id can stop resolving without the device having gone anywhere: Sonar's virtual endpoints
+    /// are handed a fresh id whenever GG rebuilds its driver, and a headset moved to another USB port
+    /// looks the same. By id alone that is indistinguishable from unplugged, and the setting is dead
+    /// until the user notices and re-picks. Matching the name recovers it.
+    ///
+    /// Ambiguity is refused rather than guessed — two identical headsets carry the same name, and
+    /// silently holding the wrong one is worse than holding neither.
+    /// </summary>
+    public string? FindRenderDeviceIdByName(string? name) => FindUniqueId(GetRenderDevices(), name);
+
+    /// <summary>
+    /// The same rule over an already-enumerated list, for a caller that is holding one — the view model
+    /// repairs every saved reference against a single snapshot.
+    /// </summary>
+    public static string? FindUniqueId(IReadOnlyList<AudioDevice> devices, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        string? found = null;
+
+        foreach (var device in devices)
+        {
+            if (!string.Equals(device.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (found is not null)
+                return null;
+
+            found = device.Id;
+        }
+
+        return found;
+    }
+
+    /// <summary>
     /// Moves the *system* default playback device, exactly as the Sound control panel does. Only
     /// <see cref="DefaultDeviceGuard"/> calls this, and only when the user has asked for it.
     /// </summary>

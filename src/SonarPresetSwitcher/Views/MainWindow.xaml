@@ -274,7 +274,7 @@
                                                           ItemsSource="{Binding DataContext.MappingOutputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
                                                           SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
                                                           ItemTemplate="{StaticResource AudioDeviceItem}"
-                                                          TextSearch.TextPath="Name"
+                                                          TextSearch.TextPath="DisplayName"
                                                           IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
                                                           ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
 
@@ -325,7 +325,7 @@
                                   ItemsSource="{Binding OutputDevices}"
                                   SelectedItem="{Binding DefaultOutputDevice, Mode=TwoWay}"
                                   ItemTemplate="{StaticResource AudioDeviceItem}"
-                                  TextSearch.TextPath="Name"
+                                  TextSearch.TextPath="DisplayName"
                                   IsEnabled="{Binding AudioRoutingSupported}"
                                   ToolTip="{Binding OutputDeviceTooltip}" />
 
@@ -340,7 +340,7 @@
                                   ItemsSource="{Binding SystemDefaultDevices}"
                                   SelectedItem="{Binding KeepWindowsDefaultDevice, Mode=TwoWay}"
                                   ItemTemplate="{StaticResource AudioDeviceItem}"
-                                  TextSearch.TextPath="Name"
+                                  TextSearch.TextPath="DisplayName"
                                   IsEnabled="{Binding KeepWindowsDefaultSupported}"
                                   Margin="0,12,0,0"
                                   ToolTip="{Binding KeepWindowsDefaultTooltip}" />

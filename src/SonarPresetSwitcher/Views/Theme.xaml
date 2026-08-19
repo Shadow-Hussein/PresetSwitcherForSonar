@@ -622,7 +622,7 @@
     </DataTemplate>
 
     <DataTemplate x:Key="AudioDeviceItem">
-        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
     </DataTemplate>
 
 </ResourceDictionary>
