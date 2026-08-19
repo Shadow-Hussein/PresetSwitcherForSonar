@@ -53,6 +53,36 @@ public sealed class AppSettings
     [JsonPropertyName("mappings")]
     public List<GameMapping> Mappings { get; set; } = [];
 
+    /// <summary>
+    /// Applies a saved Volume Boost to Sonar's Game and Media channels whenever Sonar starts playing
+    /// that channel out of a device listed in <see cref="ChannelBoosts"/>. Off by default: it writes to
+    /// the Sonar preset that is selected at the time.
+    /// </summary>
+    [JsonPropertyName("applyChannelBoost")]
+    public bool ApplyChannelBoost { get; set; }
+
+    [JsonPropertyName("channelBoosts")]
+    public List<ChannelBoostRule> ChannelBoosts { get; set; } = [];
+
+    /// <summary>
+    /// Puts the boost back to <see cref="RestoreBoostDb"/> when a preset stops being covered by a rule
+    /// — the feature turned off, the rule deleted or disabled, or the channel moved to a device with no
+    /// rule. Off by default, because on its own the feature leaves what it applied in place.
+    /// </summary>
+    [JsonPropertyName("restoreBoostOnRelease")]
+    public bool RestoreBoostOnRelease { get; set; }
+
+    /// <summary>What a released preset goes back to. 0 is Sonar's own default.</summary>
+    [JsonPropertyName("restoreBoostDb")]
+    public double RestoreBoostDb { get; set; }
+
+    /// <summary>
+    /// The presets this app has written a boost into. Persisted so a restore still works after a
+    /// restart, and so a boost the *user* set by hand is never mistaken for one of ours.
+    /// </summary>
+    [JsonPropertyName("boostedConfigs")]
+    public List<BoostedConfig> BoostedConfigs { get; set; } = [];
+
     /// <summary>Derived, not persisted — it was being written to settings.json as a stray key.</summary>
     [JsonIgnore]
     public int ClampedPollInterval => Math.Clamp(PollIntervalSeconds, 1, 30);

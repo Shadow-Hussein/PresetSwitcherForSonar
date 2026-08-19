@@ -34,8 +34,9 @@ Hand-wired in `App.OnStartup`; there is no DI container. The dependency order is
 SonarDiscovery -> SonarClient ─┐
 ProcessWatcher ────────────────┼-> PresetCoordinator -> MainViewModel -> MainWindow
       │            AudioRoutingService ─┘              │             └-> TrayIconHost
-      └───────────────> DefaultDeviceGuard ────────────┘
-AudioDeviceService ─────> both audio services
+      └───────────────> DefaultDeviceGuard ────────────┤
+AudioDeviceService ─────> both audio services          │
+SonarClient ────────────> ChannelBoostService ─────────┘
 ```
 
 `ProcessWatcher` feeds `DefaultDeviceGuard` too: it reports *every* process name, not just mapped ones
@@ -51,6 +52,50 @@ matters:
 - `Activity` — human-readable log lines, including connects, skips and errors.
 - `PresetSwitched` — fires **only** on a successful switch. Deliberately separate from `Activity` so
   that connects and errors do not become desktop notifications.
+
+**`ChannelBoostService` is a second, independent Sonar poller** and the only caller of
+`SonarClient.PutConfigAsync`. It is deliberately *not* part of `PresetCoordinator`: that class is keyed
+on running processes and owns preset selection, while the boost is keyed on Sonar's redirection state.
+Traps specific to it:
+
+- **Sonar's "Volume boost" is `data.generalGain`** on a config — 0 to 12 dB in 0.1 steps (confirmed from
+  GG's own frontend: `minValue: 0, maxValue: 12, step: .1, unit: "dB"`). There is **no route that sets a
+  gain directly**; every route template in `SoundStage.Api.dll` was dumped and none mentions gain or
+  boost. The only write path is `PUT /configs` with the entire config body.
+- **Because of that, configs are round-tripped as `JsonObject`, never as `SonarConfig`.** The `data`
+  payload carries a ten-band parametric EQ, virtual surround positions and more; deserialising into a
+  typed model and PUTting it back would silently drop everything unmodelled. Read the node, change the
+  one field, send the node.
+- **The boost belongs to the preset, not the device**, so applying one permanently edits whichever
+  preset is selected at the time. That is a deliberate, user-approved trade-off, not an oversight.
+- **On-change-only is the whole design, not an optimisation**, and the key is the *pair*: `_applied`
+  maps channel → `(DeviceId, ConfigId)`. Keying on the device alone would fail to re-apply after a
+  preset switch (each preset carries its own gain); re-writing every tick would revert the user's own
+  slider. `UpdateSettings` sets a `volatile` flag rather than clearing `_applied` directly, so that
+  dictionary stays owned by the loop thread alone.
+- `/configs/selected` is only fetched when a rule actually matches the current device — it carries the
+  full EQ payload for all five channels, so pulling it every tick would be wasteful.
+- **Classic mode only.** Streamer mode redirects through different routes, so `/classicRedirections`
+  would not describe the device in use. The skip is announced once per mode transition, never per tick.
+- Not every config has a `generalGain`: the `chatRender` and `chatCapture` ones carry a completely
+  different key set. `ReadGeneralGain` returning null is normal, not an error.
+- **`BoostedConfigs` is what makes the restore option safe, and it is persisted for that reason.** It
+  records the preset ids this app actually wrote a boost into, so releasing one never resets a boost the
+  *user* set by hand — there is no other way to tell the two apart. It is only added to after a PUT
+  succeeds, never on the epsilon-skip path, or a preset that already happened to sit at the target would
+  be claimed and later zeroed. An in-memory list would defeat the point: the whole scenario is unticking
+  the feature days later.
+- The release path is the one place that fetches `/configs` rather than `/configs/selected` — a preset
+  switch leaves our boost on the preset we switched away from, which the selected list no longer
+  carries. If that fetch fails the records are **kept** and retried, never dropped.
+- `SettingsChanged` is raised once at the end of a tick, not per edit, and the VM handles it with
+  `Dispatch(Persist)`. The service mutates `AppSettings.BoostedConfigs` on its own thread while the UI
+  thread serialises it; firing once, after all mutation for that tick is done, is what keeps those two
+  off each other.
+- Sonar's own virtual endpoints are filtered out of **the boost picker only** (`isVad` from
+  `/audioDevices`, with `AudioDevice.LooksLikeSonarVirtual` as the offline fallback). The other pickers
+  keep them on purpose — routing an app *to* "Sonar - Gaming", or holding it as the Windows default, are
+  both legitimate.
 
 **`AppSettings` is a single mutable instance shared by reference** between the coordinator and the view
 model. Every write goes through `MainViewModel.Persist()` → `SettingsStore.Save` + `coordinator.UpdateSettings`.

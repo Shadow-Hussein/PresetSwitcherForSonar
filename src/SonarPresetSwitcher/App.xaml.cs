@@ -17,6 +17,7 @@ public partial class App : Application
     private AudioRoutingService? _routing;
     private DefaultDeviceGuard? _defaultGuard;
     private PresetCoordinator? _coordinator;
+    private ChannelBoostService? _channelBoosts;
     private TrayIconHost? _tray;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -48,9 +49,11 @@ public partial class App : Application
         _routing = new AudioRoutingService(_audioDevices);
         _defaultGuard = new DefaultDeviceGuard(_audioDevices, _watcher, settings);
         _coordinator = new PresetCoordinator(_client, _watcher, _routing, settings);
+        _channelBoosts = new ChannelBoostService(_client, settings);
 
         var viewModel = new MainViewModel(
-            _client, _watcher, _coordinator, _audioDevices, _routing, _defaultGuard, settings);
+            _client, _watcher, _coordinator, _audioDevices, _routing, _defaultGuard,
+            _channelBoosts, settings);
         var window = new MainWindow(viewModel);
         MainWindow = window;
 
@@ -63,6 +66,7 @@ public partial class App : Application
         _coordinator.Start();
         _watcher.Start();
         _defaultGuard.Start();
+        _channelBoosts.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -70,6 +74,7 @@ public partial class App : Application
         _tray?.Dispose();
         _coordinator?.Dispose();
         _defaultGuard?.Dispose();
+        _channelBoosts?.Dispose();
         _routing?.Dispose();
         _watcher?.Dispose();
         _client?.Dispose();

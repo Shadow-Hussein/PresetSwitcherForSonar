@@ -1,5 +1,7 @@
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SonarPresetSwitcher.Models;
 
 namespace SonarPresetSwitcher.Services;
@@ -11,7 +13,10 @@ namespace SonarPresetSwitcher.Services;
 ///                                 (see <see cref="GetGamePresetsAsync"/>)
 ///   GET  /configs/selected        the active preset per channel
 ///   PUT  /configs/{id}/select     switch the channel that preset belongs to
-///   GET  /mode                    cheap liveness probe
+///   GET  /mode                    cheap liveness probe, and classic vs. streamer mixer mode
+///   GET  /classicRedirections     which Windows endpoint each channel plays out of
+///   GET  /audioDevices            every endpoint Sonar knows, with isVad
+///   PUT  /configs                 save a whole config — the only way to set data.generalGain
 ///
 /// Every call goes through <see cref="SendAsync"/>, which re-runs discovery and retries once when the
 /// transport fails — that is what makes the app survive a GG restart handing Sonar a new port.
@@ -81,6 +86,107 @@ public sealed class SonarClient : IDisposable
         return response is { IsSuccessStatusCode: true };
     }
 
+    /// <summary>
+    /// Sonar's mixer mode — <c>"classic"</c> or <c>"streamer"</c>. Returned as a bare JSON string,
+    /// not an object.
+    /// </summary>
+    public async Task<string?> GetModeAsync(CancellationToken ct = default) =>
+        await GetJsonAsync<string>("/mode", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Which Windows endpoint each channel is currently playing out of. The <c>deviceId</c> values are
+    /// raw MMDevice ids, directly comparable with <see cref="AudioDevice.Id"/>.
+    ///
+    /// Null means Sonar could not be reached, which an empty list would hide.
+    /// </summary>
+    public async Task<IReadOnlyList<SonarRedirection>?> GetClassicRedirectionsAsync(
+        CancellationToken ct = default) =>
+        await GetJsonAsync<List<SonarRedirection>>("/classicRedirections", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Every audio endpoint Sonar knows about. Read only for <c>isVad</c>, which is the authoritative
+    /// way to tell Sonar's own virtual endpoints from real hardware.
+    /// </summary>
+    public async Task<IReadOnlyList<SonarAudioDevice>?> GetAudioDevicesAsync(CancellationToken ct = default) =>
+        await GetJsonAsync<List<SonarAudioDevice>>("/audioDevices", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// The selected config for every channel, as the raw JSON Sonar returned.
+    ///
+    /// Raw rather than <see cref="SonarConfig"/> on purpose: the only way to change a single field is
+    /// to PUT the whole config back, and anything this app failed to model would be dropped on the way
+    /// through. The <c>data</c> payload alone carries a ten-band parametric EQ, virtual surround
+    /// positions and more, so round-tripping the untouched node is the only safe edit.
+    /// </summary>
+    public async Task<JsonArray?> GetSelectedConfigNodesAsync(CancellationToken ct = default) =>
+        await GetJsonAsync<JsonArray>("/configs/selected", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Every config, raw. Only needed when putting a boost back: a preset switch leaves our boost on
+    /// the preset we switched away from, which <c>/configs/selected</c> no longer lists. Much larger
+    /// than the selected list, so this is fetched on release and never on the polling path.
+    /// </summary>
+    public async Task<JsonArray?> GetAllConfigNodesAsync(CancellationToken ct = default) =>
+        await GetJsonAsync<JsonArray>("/configs", ct).ConfigureAwait(false);
+
+    /// <summary>Saves a config previously read by <see cref="GetSelectedConfigNodesAsync"/>.</summary>
+    public async Task<bool> PutConfigAsync(JsonObject config, CancellationToken ct = default)
+    {
+        using var response = await SendAsync(HttpMethod.Put, "/configs", ct, config.ToJsonString())
+            .ConfigureAwait(false);
+
+        return response is { IsSuccessStatusCode: true };
+    }
+
+    /// <summary>Picks one config out of <see cref="GetAllConfigNodesAsync"/> by id.</summary>
+    public static JsonObject? FindConfigById(JsonArray configs, string id)
+    {
+        foreach (var node in configs)
+        {
+            if (node is JsonObject config &&
+                string.Equals(config["id"]?.GetValue<string>(), id, StringComparison.OrdinalIgnoreCase))
+                return config;
+        }
+
+        return null;
+    }
+
+    /// <summary>Picks one channel's config out of <see cref="GetSelectedConfigNodesAsync"/>.</summary>
+    public static JsonObject? FindChannelConfig(JsonArray configs, string channel)
+    {
+        foreach (var node in configs)
+        {
+            if (node is JsonObject config &&
+                string.Equals(
+                    config["virtualAudioDevice"]?.GetValue<string>(),
+                    channel,
+                    StringComparison.OrdinalIgnoreCase))
+                return config;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Sonar's "Volume boost" for a config — <c>data.generalGain</c>, 0 to 12 dB in 0.1 steps, applied
+    /// before processing. There is no route that sets it directly; the whole config has to go back.
+    /// </summary>
+    public static double? ReadGeneralGain(JsonObject config) =>
+        config["data"] is JsonObject data && data["generalGain"] is JsonValue gain &&
+        gain.TryGetValue<double>(out var value)
+            ? value
+            : null;
+
+    /// <summary>Writes <c>data.generalGain</c> in place, leaving every other field untouched.</summary>
+    public static bool WriteGeneralGain(JsonObject config, double db)
+    {
+        if (config["data"] is not JsonObject data)
+            return false;
+
+        data["generalGain"] = JsonValue.Create(db);
+        return true;
+    }
+
     private async Task<T?> GetJsonAsync<T>(string path, CancellationToken ct)
     {
         using var response = await SendAsync(HttpMethod.Get, path, ct).ConfigureAwait(false);
@@ -102,7 +208,8 @@ public sealed class SonarClient : IDisposable
     /// Issues the request, and on transport failure invalidates the cached base URL and tries once
     /// more against a freshly discovered endpoint. Returns null when Sonar cannot be reached at all.
     /// </summary>
-    private async Task<HttpResponseMessage?> SendAsync(HttpMethod method, string path, CancellationToken ct)
+    private async Task<HttpResponseMessage?> SendAsync(
+        HttpMethod method, string path, CancellationToken ct, string? jsonBody = null)
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -113,6 +220,12 @@ public sealed class SonarClient : IDisposable
             try
             {
                 using var request = new HttpRequestMessage(method, baseUrl + path);
+
+                // Built per attempt, never hoisted: an HttpContent cannot be sent twice, so reusing one
+                // instance would turn the retry above into an ObjectDisposedException.
+                if (jsonBody is not null)
+                    request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
                 var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
 
                 // A 404 after a GG update most likely means the route moved rather than a dead port,

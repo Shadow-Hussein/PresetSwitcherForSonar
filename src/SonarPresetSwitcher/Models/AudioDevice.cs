@@ -41,6 +41,16 @@ public sealed record AudioDevice(string Id, string Name)
     public override string ToString() => DisplayName;
 
     /// <summary>
+    /// True for one of Sonar's own virtual endpoints — "SteelSeries Sonar - Gaming" and friends.
+    ///
+    /// Sonar answers this authoritatively via <c>isVad</c> on <c>GET /audioDevices</c>, but that needs
+    /// Sonar running. This name match is the offline fallback, and matches the friendly name GG gives
+    /// every one of them.
+    /// </summary>
+    public static bool LooksLikeSonarVirtual(string? name) =>
+        (name ?? "").Contains("SteelSeries Sonar", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// A saved name with the marker stripped. An older build baked "(not connected)" into
     /// <see cref="Name"/> and then re-appended it on every refresh, so a settings file can carry several.
     /// Nothing writes it any more; this is what makes an already-corrupted name usable again — both for

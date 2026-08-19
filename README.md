@@ -41,7 +41,10 @@ Against that base URL:
 | `GET` | `/configs` | every preset, with `isFavorite` and `favoritePosition` |
 | `GET` | `/configs/selected` | the active preset per channel |
 | `PUT` | `/configs/{id}/select` | switching the preset |
-| `GET` | `/mode` | liveness probe |
+| `GET` | `/mode` | liveness probe, and classic vs. streamer mixer mode |
+| `GET` | `/classicRedirections` | which Windows endpoint each channel plays out of |
+| `GET` | `/audioDevices` | every endpoint Sonar knows, with `isVad` |
+| `PUT` | `/configs` | saving a whole config — the only way to set `data.generalGain` |
 
 Any transport failure invalidates the cached URL and the call is retried once against a freshly
 discovered endpoint, so restarting GG (which hands Sonar a new port) heals without restarting the app.
@@ -82,10 +85,50 @@ Two things to know:
 Off by default. If you would rather not touch the system default at all, the per-app output device
 column does the same job for individual games without it.
 
+## Per-device Volume Boost
+
+Sonar's **Volume Boost** — the 0 to 12 dB slider above the equalizer, applied before processing — is
+stored per *preset*, not per device. Send the Game channel from a headset to speakers and the headset's
+boost comes with it, so a level that suits one output is wrong on the other.
+
+**Sonar Volume Boost per device** saves a Game and a Media boost for each output device. When Sonar
+starts playing that channel through it, `ChannelBoostService` applies the saved dB. The two channels are
+independent: a device can hold 6 dB for Game and 3 dB for Media, and leaving a box empty leaves that
+channel alone entirely. Sonar's own virtual endpoints are kept out of the picker — boosting the channel
+that feeds "Sonar - Gaming" would be circular.
+
+**The boost is written into the preset.** Sonar exposes no route that sets a gain directly; the whole
+config has to be PUT back, so applying a boost edits whichever preset is selected on that channel at the
+time, permanently. Two things follow:
+
+- Applied **on change only** — once set for a device, nothing is written again until something actually
+  changes, so you stay free to move the slider by hand afterwards.
+- Every preset carries its own boost, so switching presets replaces it. The trigger is therefore the
+  *pair* — output device and selected preset — which means a preset switch re-applies the boost while a
+  device that has not moved is left alone. Losing and regaining Sonar re-arms it too.
+
+Off by default, and classic mode only — streamer mode redirects through different routes, so the app
+says so in the log and stands aside rather than editing a preset based on the wrong device.
+
+### Restoring a boost
+
+On its own the feature never takes a boost back off: unticking it, or moving the channel to a device
+with no rule, leaves the last boost sitting in the preset. Tick **"Restore to _n_ dB when a device stops
+using it"** to have those presets put back instead. 0 dB is Sonar's own default.
+
+Three things trigger a restore: the feature being switched off, the rule being deleted or disabled, and
+the channel moving to a device with no rule.
+
+Only presets this app actually boosted are touched — the ids are recorded in `boostedConfigs`, so a
+Volume Boost set by hand in GG is never reset. That record is persisted, so unticking the feature
+tomorrow still undoes what was applied today, and a restore that cannot reach Sonar keeps its record and
+retries rather than forgetting what it changed.
+
 ## Settings
 
 `%APPDATA%\SonarPresetSwitcher\settings.json`, written atomically. Holds the mappings, the default
-preset, the held default device, tray/autostart toggles, and the poll interval.
+preset, the held default device, the per-device volume boosts, tray/autostart toggles, and the poll
+interval.
 
 ## Caveat
 

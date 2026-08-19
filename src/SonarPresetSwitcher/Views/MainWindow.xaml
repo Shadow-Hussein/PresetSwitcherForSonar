@@ -4,8 +4,8 @@
         xmlns:vm="clr-namespace:SonarPresetSwitcher.ViewModels"
         Title="Sonar Preset Switcher"
         Icon="pack://application:,,,/Assets/app.ico"
-        Width="1000" Height="720"
-        MinWidth="860" MinHeight="560"
+        Width="1000" Height="800"
+        MinWidth="860" MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="#15171C">
 
@@ -108,6 +108,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -294,8 +295,168 @@
                 </Grid>
             </Border>
 
-            <!-- Settings -->
+            <!--
+                Per-device Sonar channel volume. Sonar keeps one volume per channel rather than one per
+                channel per device, so each row remembers a level for one output device and the service
+                puts it back when Sonar starts playing that channel through it.
+            -->
             <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,12,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="SONAR VOLUME BOOST PER DEVICE"
+                                       Style="{StaticResource SectionHeader}"
+                                       Margin="0,0,12,0" />
+                            <CheckBox Content="Enabled"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,18,8"
+                                      IsChecked="{Binding ApplyChannelBoost}"
+                                      ToolTip="{Binding ChannelBoostTooltip}" />
+
+                            <CheckBox Content="Restore to"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,6,8"
+                                      IsChecked="{Binding RestoreBoostOnRelease}"
+                                      ToolTip="{Binding RestoreBoostTooltip}" />
+
+                            <TextBox Width="44"
+                                     Margin="0,0,6,8"
+                                     TextAlignment="Center"
+                                     VerticalAlignment="Center"
+                                     VerticalContentAlignment="Center"
+                                     Padding="2,3"
+                                     Text="{Binding RestoreBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                     IsEnabled="{Binding RestoreBoostOnRelease}"
+                                     ToolTip="{Binding RestoreBoostTooltip}" />
+
+                            <TextBlock Text="dB when a device stops using it"
+                                       Foreground="{StaticResource Dim}"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,0,8"
+                                       ToolTip="{Binding RestoreBoostTooltip}" />
+                        </StackPanel>
+                        <Button Content="Add device…"
+                                HorizontalAlignment="Right"
+                                Command="{Binding AddChannelBoostCommand}" />
+                    </Grid>
+
+                    <Grid Grid.Row="1" MinHeight="34">
+                        <TextBlock Text="No devices yet. Click “Add device…” to save a Game and Media volume boost for one output device."
+                                   Foreground="{StaticResource Dim}"
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasChannelBoosts}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="170">
+                            <ItemsControl ItemsSource="{Binding ChannelBoosts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:ChannelBoostRowViewModel}">
+                                        <Border Background="#12141A"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="12,10"
+                                                Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="44" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="44" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding Enabled}"
+                                                          ToolTip="Enable this rule"
+                                                          Margin="0,0,10,0" />
+
+                                                <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="#3A3F4B" />
+                                                            <Setter Property="ToolTip" Value="{Binding InUseTooltip}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInUse}" Value="True">
+                                                                    <Setter Property="Fill" Value="#22C55E" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+
+                                                <ComboBox Grid.Column="2"
+                                                          Margin="0,0,10,0"
+                                                          ItemsSource="{Binding DataContext.ChannelBoostDevices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource AudioDeviceItem}"
+                                                          TextSearch.TextPath="DisplayName"
+                                                          ToolTip="{Binding DataContext.ChannelBoostTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <TextBlock Grid.Column="3"
+                                                           Text="Game dB"
+                                                           Foreground="{StaticResource Dim}"
+                                                           Margin="0,0,6,0" />
+
+                                                <TextBox Grid.Column="4"
+                                                         Text="{Binding GameBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         TextAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         VerticalContentAlignment="Center"
+                                                         Padding="2,3"
+                                                         ToolTip="Game channel Volume Boost in dB, 0-12. Leave empty to leave this channel alone." />
+
+                                                <TextBlock Grid.Column="5"
+                                                           Text="Media dB"
+                                                           Foreground="{StaticResource Dim}"
+                                                           Margin="14,0,6,0" />
+
+                                                <TextBox Grid.Column="6"
+                                                         Text="{Binding MediaBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         TextAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         VerticalContentAlignment="Center"
+                                                         Padding="2,3"
+                                                         ToolTip="Media channel Volume Boost in dB, 0-12. Leave empty to leave this channel alone." />
+
+                                                <Button Grid.Column="7"
+                                                        Content="Remove"
+                                                        Margin="10,0,0,0"
+                                                        Padding="10,5"
+                                                        Command="{Binding DataContext.RemoveChannelBoostCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- Settings -->
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0">
                 <StackPanel>
                     <TextBlock Text="SETTINGS" Style="{StaticResource SectionHeader}" />
                     <Grid>
@@ -379,7 +540,7 @@
             </Border>
 
             <!-- Activity -->
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0" Height="128">
+            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,12,0,0" Height="128">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

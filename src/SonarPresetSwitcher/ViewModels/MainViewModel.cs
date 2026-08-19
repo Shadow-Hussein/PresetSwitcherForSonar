@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Windows;
 using SonarPresetSwitcher.Models;
 using SonarPresetSwitcher.Services;
@@ -15,6 +16,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly AudioDeviceService _audioDevices;
     private readonly AudioRoutingService _routing;
     private readonly DefaultDeviceGuard _defaultGuard;
+    private readonly ChannelBoostService _channelBoosts;
     private readonly AppSettings _settings;
 
     private bool _connected;
@@ -33,6 +35,7 @@ public sealed class MainViewModel : ObservableObject
         AudioDeviceService audioDevices,
         AudioRoutingService routing,
         DefaultDeviceGuard defaultGuard,
+        ChannelBoostService channelBoosts,
         AppSettings settings)
     {
         _client = client;
@@ -41,13 +44,19 @@ public sealed class MainViewModel : ObservableObject
         _audioDevices = audioDevices;
         _routing = routing;
         _defaultGuard = defaultGuard;
+        _channelBoosts = channelBoosts;
         _settings = settings;
 
         foreach (var mapping in settings.Mappings)
             Mappings.Add(CreateRow(mapping));
 
+        foreach (var rule in settings.ChannelBoosts)
+            ChannelBoosts.Add(CreateBoostRow(rule));
+
         AddMappingCommand = new RelayCommand(AddMapping);
         RemoveMappingCommand = new RelayCommand(RemoveMapping);
+        AddChannelBoostCommand = new RelayCommand(AddChannelBoost);
+        RemoveChannelBoostCommand = new RelayCommand(RemoveChannelBoost);
         RefreshCommand = new RelayCommand(async () => await RefreshAsync());
 
         _coordinator.StateChanged += OnCoordinatorStateChanged;
@@ -55,6 +64,10 @@ public sealed class MainViewModel : ObservableObject
         _routing.Activity += OnActivity;
         _defaultGuard.Activity += OnActivity;
         _defaultGuard.SupportChanged += OnDefaultGuardSupportChanged;
+        _channelBoosts.Activity += OnActivity;
+        _channelBoosts.RedirectionsChanged += OnRedirectionsChanged;
+        _channelBoosts.VirtualDevicesChanged += OnVirtualDevicesChanged;
+        _channelBoosts.SettingsChanged += OnBoostSettingsChanged;
     }
 
     public ObservableCollection<MappingRowViewModel> Mappings { get; } = [];
@@ -71,11 +84,21 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Real devices only — "system default" is meaningless when you are picking what it is.</summary>
     public ObservableCollection<AudioDevice> SystemDefaultDevices { get; } = [];
 
+    /// <summary>Per-device Sonar Volume Boost rules.</summary>
+    public ObservableCollection<ChannelBoostRowViewModel> ChannelBoosts { get; } = [];
+
+    /// <summary>Real hardware only — Sonar's own virtual endpoints are excluded from this one.</summary>
+    public ObservableCollection<AudioDevice> ChannelBoostDevices { get; } = [];
+
     public ObservableCollection<string> ActivityLog { get; } = [];
 
     public RelayCommand AddMappingCommand { get; }
 
     public RelayCommand RemoveMappingCommand { get; }
+
+    public RelayCommand AddChannelBoostCommand { get; }
+
+    public RelayCommand RemoveChannelBoostCommand { get; }
 
     public RelayCommand RefreshCommand { get; }
 
@@ -126,6 +149,28 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public bool HasMappings => Mappings.Count > 0;
+
+    public bool HasChannelBoosts => ChannelBoosts.Count > 0;
+
+    public string ChannelBoostTooltip =>
+        "Sonar's Volume Boost (0-12 dB) is stored per preset, not per device, so a level that suits " +
+        "speakers is wrong the moment the channel moves to a headset.\n\n" +
+        "Each row saves a boost for one output device. When Sonar starts playing that channel " +
+        "through it, the boost is applied — once, on the change, so you can still move the slider " +
+        "yourself afterwards. Leave a box empty to leave that channel alone.\n\n" +
+        "Because Sonar has no per-device setting for this, the boost is written into whichever preset " +
+        "is selected on that channel at the time, and that edit is permanent. Switching presets loads " +
+        "a different boost, so it is re-applied after every switch.\n\n" +
+        "Only applies while Sonar is in classic mode.";
+
+    public string RestoreBoostTooltip =>
+        "On its own, a boost stays in the preset once applied — unticking the feature above, or moving " +
+        "the channel to a device with no rule, leaves the last boost in place.\n\n" +
+        "Tick this to put those presets back to the level on the right instead. 0 dB is Sonar's own " +
+        "default.\n\n" +
+        "Only presets this app actually boosted are touched; a Volume Boost you set yourself in GG is " +
+        "never reset. The record survives a restart, so unticking the feature tomorrow still undoes " +
+        "what was applied today.";
 
     // ---- settings-backed properties -------------------------------------------------------
 
@@ -204,6 +249,66 @@ public sealed class MainViewModel : ObservableObject
             _settings.KeepWindowsDefaultDeviceName = value?.Name ?? "";
             Persist();
         }
+    }
+
+    public bool ApplyChannelBoost
+    {
+        get => _settings.ApplyChannelBoost;
+        set
+        {
+            if (_settings.ApplyChannelBoost == value)
+                return;
+
+            _settings.ApplyChannelBoost = value;
+            OnPropertyChanged();
+            Persist();
+        }
+    }
+
+    public bool RestoreBoostOnRelease
+    {
+        get => _settings.RestoreBoostOnRelease;
+        set
+        {
+            if (_settings.RestoreBoostOnRelease == value)
+                return;
+
+            _settings.RestoreBoostOnRelease = value;
+            OnPropertyChanged();
+            Persist();
+        }
+    }
+
+    /// <summary>The level a released preset goes back to, as text so the box can be edited freely.</summary>
+    public string RestoreBoostText
+    {
+        get => _settings.RestoreBoostDb.ToString("0.#", CultureInfo.CurrentCulture);
+        set
+        {
+            var parsed = ParseDb(value) ?? 0;
+
+            if (Math.Abs(_settings.RestoreBoostDb - parsed) > 0.001)
+            {
+                _settings.RestoreBoostDb = parsed;
+                Persist();
+            }
+
+            // Raised either way, so a clamped or rejected entry snaps back to what was saved.
+            OnPropertyChanged();
+        }
+    }
+
+    private static double? ParseDb(string? text)
+    {
+        var trimmed = (text ?? "").Trim();
+        if (trimmed.Length == 0)
+            return null;
+
+        if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) ||
+            double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+            return ChannelBoostRule.Clamp(value);
+
+        return null;
     }
 
     public bool ShowNotifications
@@ -361,8 +466,21 @@ public sealed class MainViewModel : ObservableObject
             foreach (var device in WithMissing(devices, known, [KeepWindowsDefaultReference()]))
                 SystemDefaultDevices.Add(device);
 
+            // Sonar's own virtual endpoints are excluded here and nowhere else: boosting the channel
+            // that feeds "Sonar - Gaming" is circular, whereas routing an app *to* it, or holding it as
+            // the Windows default, are both things someone might legitimately want.
+            ChannelBoostDevices.Clear();
+            foreach (var device in WithMissing(devices, known, ChannelBoostReferences()))
+            {
+                if (!IsSonarVirtual(device))
+                    ChannelBoostDevices.Add(device);
+            }
+
             foreach (var row in Mappings)
                 row.SyncOutputDevice(MappingOutputDevices);
+
+            foreach (var row in ChannelBoosts)
+                row.SyncDevice(ChannelBoostDevices);
 
             DefaultOutputDevice = OutputDevices.FirstOrDefault(d =>
                 string.Equals(d.Id, _settings.DefaultOutputDeviceId, StringComparison.OrdinalIgnoreCase))
@@ -466,6 +584,17 @@ public sealed class MainViewModel : ObservableObject
             changed = true;
         }
 
+        foreach (var rule in _settings.ChannelBoosts)
+        {
+            var (id, name) = Repair(rule.DeviceId, rule.DeviceName);
+            if (id == rule.DeviceId && name == rule.DeviceName)
+                continue;
+
+            rule.DeviceId = id;
+            rule.DeviceName = name;
+            changed = true;
+        }
+
         return changed;
     }
 
@@ -474,6 +603,20 @@ public sealed class MainViewModel : ObservableObject
 
     private (string Id, string Name) KeepWindowsDefaultReference() =>
         (_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
+
+    /// <summary>
+    /// Sonar answers this authoritatively once it has been reached; the name match covers the window
+    /// before that, and the case where Sonar is not running at all.
+    /// </summary>
+    private bool IsSonarVirtual(AudioDevice device) =>
+        _channelBoosts.VirtualDeviceIds.Contains(device.Id) ||
+        AudioDevice.LooksLikeSonarVirtual(device.Name);
+
+    private IEnumerable<(string Id, string Name)> ChannelBoostReferences()
+    {
+        foreach (var rule in _settings.ChannelBoosts)
+            yield return (rule.DeviceId, rule.DeviceName);
+    }
 
     private IEnumerable<(string Id, string Name)> MappingReferences()
     {
@@ -551,13 +694,71 @@ public sealed class MainViewModel : ObservableObject
         Persist();
     }
 
+    /// <summary>
+    /// Adds a rule for the first output device that does not have one yet. There is no dialog: the row
+    /// carries its own device picker, and one device per rule is the only constraint.
+    /// </summary>
+    private void AddChannelBoost()
+    {
+        var taken = ChannelBoosts
+            .Select(r => r.Rule.DeviceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var device = ChannelBoostDevices.FirstOrDefault(d => !taken.Contains(d.Id));
+        if (device is null)
+        {
+            MessageBox.Show(
+                Application.Current.MainWindow!,
+                ChannelBoostDevices.Count == 0
+                    ? "No output devices were found."
+                    : "Every output device already has a boost rule.",
+                "Nothing to add",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var rule = new ChannelBoostRule
+        {
+            DeviceId = device.Id,
+            DeviceName = AudioDevice.CleanName(device.Name),
+        };
+
+        _settings.ChannelBoosts.Add(rule);
+        var row = CreateBoostRow(rule);
+        row.SyncDevice(ChannelBoostDevices);
+        ChannelBoosts.Add(row);
+        OnPropertyChanged(nameof(HasChannelBoosts));
+
+        Log($"Added a volume boost rule for {device.DisplayName}.");
+        Persist();
+    }
+
+    private void RemoveChannelBoost(object? parameter)
+    {
+        if (parameter is not ChannelBoostRowViewModel row)
+            return;
+
+        // Nothing to undo in Sonar: the levels this wrote are Sonar's own, and leaving them where they
+        // are is what the user last heard.
+        _settings.ChannelBoosts.Remove(row.Rule);
+        ChannelBoosts.Remove(row);
+        OnPropertyChanged(nameof(HasChannelBoosts));
+
+        Log($"Removed the volume boost rule for {row.SelectedDevice?.DisplayName ?? row.Rule.DeviceName}.");
+        Persist();
+    }
+
     private MappingRowViewModel CreateRow(GameMapping mapping) => new(mapping, Persist);
+
+    private ChannelBoostRowViewModel CreateBoostRow(ChannelBoostRule rule) => new(rule, Persist);
 
     private void Persist()
     {
         SettingsStore.Save(_settings);
         _coordinator.UpdateSettings(_settings);
         _defaultGuard.UpdateSettings(_settings);
+        _channelBoosts.UpdateSettings(_settings);
     }
 
     // ---- coordinator events ------------------------------------------------------------------
@@ -578,6 +779,27 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private void OnActivity(string message) => Dispatch(() => Log(message));
+
+    /// <summary>
+    /// Sonar has told us which endpoints are its own. Rebuild the pickers so any virtual device that
+    /// slipped past the name match before Sonar was reachable drops out of the boost list.
+    /// </summary>
+    private void OnVirtualDevicesChanged() =>
+        Dispatch(() => ApplyOutputDevices(_audioDevices.GetRenderDevices()));
+
+    /// <summary>
+    /// The boost service has recorded, or cleared, a preset it changed. Saving is the view model's job,
+    /// and it has to happen on the UI thread — the service raises this once per tick, after it has
+    /// finished touching the list, so serialising it here cannot collide with a mutation.
+    /// </summary>
+    private void OnBoostSettingsChanged() => Dispatch(Persist);
+
+    /// <summary>Lights the "in use" marker on whichever rules Sonar is currently playing through.</summary>
+    private void OnRedirectionsChanged(IReadOnlyDictionary<string, string> redirections) => Dispatch(() =>
+    {
+        foreach (var row in ChannelBoosts)
+            row.SyncRedirections(redirections);
+    });
 
     /// <summary>
     /// Whether the default endpoint can be moved is settled a moment after startup, on the guard's own
