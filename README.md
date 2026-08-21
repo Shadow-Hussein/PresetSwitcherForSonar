@@ -8,6 +8,11 @@
 A small WPF tray app that automatically switches the **SteelSeries Sonar Game-channel preset** when a
 game launches, and restores a default preset when no mapped game is running.
 
+![The Mapped presets tab: five games bound to Sonar presets and output devices](docs/screenshots/mapped-presets.png)
+
+*Each row binds a process to a Game preset and, optionally, to a Windows output device. The row for a
+game that is running is marked, and the most recently started one wins.*
+
 ## Install
 
 Grab the latest zip from [Releases](https://github.com/Shadow-Hussein/SonarPresetSwitcher/releases),
@@ -91,6 +96,11 @@ Sonar's **Volume Boost** — the 0 to 12 dB slider above the equalizer, applied 
 stored per *preset*, not per device. Send the Game channel from a headset to speakers and the headset's
 boost comes with it, so a level that suits one output is wrong on the other.
 
+![The Additional features tab, with a Game and Media boost saved for two output devices](docs/screenshots/volume-boost.png)
+
+*A boost per device and per channel — the speakers get 4.5 dB on Game and 3 dB on Media, the headset 6 dB
+on Game and nothing on Media. "Restore to 0 dB" puts a preset back when a device stops using it.*
+
 **Sonar Volume Boost per device** saves a Game and a Media boost for each output device. When Sonar
 starts playing that channel through it, `ChannelBoostService` applies the saved dB. The two channels are
 independent: a device can hold 6 dB for Game and 3 dB for Media, and leaving a box empty leaves that
@@ -126,6 +136,9 @@ retries rather than forgetting what it changed.
 
 ## Settings
 
+![The Settings tab: default preset, default output device, hold Windows default, and the poll interval](docs/screenshots/settings.png)
+
+Everything on this tab is saved as it is changed, to
 `%APPDATA%\SonarPresetSwitcher\settings.json`, written atomically. Holds the mappings, the default
 preset, the held default device, the per-device volume boosts, tray/autostart toggles, and the poll
 interval.
