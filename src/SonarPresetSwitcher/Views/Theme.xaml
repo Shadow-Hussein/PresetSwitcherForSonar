@@ -230,6 +230,119 @@
     </Style>
 
     <!--
+        Tabs need full templates for the same reason buttons do: the stock TabControl paints the Aero
+        light-grey strip and ignores Background and BorderBrush entirely.
+
+        The strip is attached to the content card, not floating above it. The TabPanel's -1 bottom
+        margin pulls it down onto the card's top border line, and the selected tab - which has no
+        bottom border and is filled in the card's own Panel colour - paints that pixel over. That
+        overlap is what makes the seam disappear; remove either half and a line cuts the tab off from
+        its page. The 12px left margin keeps the card's rounded top-left corner clear of the first tab.
+    -->
+    <Style TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TabPanel Grid.Row="0"
+                                  IsItemsHost="True"
+                                  Panel.ZIndex="1"
+                                  Margin="12,0,0,-1"
+                                  KeyboardNavigation.TabIndex="1" />
+
+                        <!--
+                            Same fill, border, radius and padding as the Card style. Tab pages carry no
+                            Border of their own, or the two 1px Line edges would stack.
+                        -->
+                        <Border Grid.Row="1"
+                                Background="{StaticResource Panel}"
+                                BorderBrush="{StaticResource Line}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="16"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              ContentSource="SelectedContent"
+                                              SnapsToDevicePixels="True" />
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        The header is a named TextBlock rather than a ContentPresenter because the implicit TextBlock
+        style above pins Foreground to Fg, and a style setter outranks an inherited value - a
+        Foreground trigger on the TabItem would never reach the text. Values set inside a template and
+        that template's own triggers both outrank an implicit style, so colouring the label directly is
+        the only thing that actually works here.
+    -->
+    <Style TargetType="TabItem">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="Bd"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            BorderThickness="1,1,1,0"
+                            CornerRadius="8,8,0,0"
+                            Margin="0,0,2,0"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="2" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Border x:Name="Bar"
+                                    Grid.Row="0"
+                                    Background="{StaticResource Accent}"
+                                    CornerRadius="1"
+                                    Margin="10,0"
+                                    Visibility="Collapsed" />
+
+                            <TextBlock x:Name="Label"
+                                       Grid.Row="1"
+                                       Text="{TemplateBinding Header}"
+                                       Foreground="{StaticResource Dim}"
+                                       FontFamily="Segoe UI"
+                                       FontSize="12"
+                                       Margin="16,7,16,9"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource Accent}" />
+                        </Trigger>
+                        <!-- Selected comes last: its fill and colour have to win over the hover state. -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource Panel}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Line}" />
+                            <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource Fg}" />
+                            <Setter TargetName="Label" Property="FontWeight" Value="SemiBold" />
+                            <Setter Property="Panel.ZIndex" Value="2" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
         The stock ComboBox is white-on-white against this theme, and there are now three of them per
         mapping row, so it gets a dark template too.
     -->

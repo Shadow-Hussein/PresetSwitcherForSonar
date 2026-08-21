@@ -14,6 +14,7 @@ public partial class App : Application
     private SonarClient? _client;
     private ProcessWatcher? _watcher;
     private AudioDeviceService? _audioDevices;
+    private AudioDeviceWatcher? _deviceWatcher;
     private AudioRoutingService? _routing;
     private DefaultDeviceGuard? _defaultGuard;
     private PresetCoordinator? _coordinator;
@@ -46,13 +47,14 @@ public partial class App : Application
         _client = new SonarClient(_discovery);
         _watcher = new ProcessWatcher { IntervalSeconds = settings.ClampedPollInterval };
         _audioDevices = new AudioDeviceService();
+        _deviceWatcher = new AudioDeviceWatcher(_audioDevices);
         _routing = new AudioRoutingService(_audioDevices);
         _defaultGuard = new DefaultDeviceGuard(_audioDevices, _watcher, settings);
         _coordinator = new PresetCoordinator(_client, _watcher, _routing, settings);
         _channelBoosts = new ChannelBoostService(_client, settings);
 
         var viewModel = new MainViewModel(
-            _client, _watcher, _coordinator, _audioDevices, _routing, _defaultGuard,
+            _client, _watcher, _coordinator, _audioDevices, _deviceWatcher, _routing, _defaultGuard,
             _channelBoosts, settings);
         var window = new MainWindow(viewModel);
         MainWindow = window;
@@ -67,6 +69,7 @@ public partial class App : Application
         _watcher.Start();
         _defaultGuard.Start();
         _channelBoosts.Start();
+        _deviceWatcher.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -75,6 +78,7 @@ public partial class App : Application
         _coordinator?.Dispose();
         _defaultGuard?.Dispose();
         _channelBoosts?.Dispose();
+        _deviceWatcher?.Dispose();
         _routing?.Dispose();
         _watcher?.Dispose();
         _client?.Dispose();

@@ -14,6 +14,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ProcessWatcher _watcher;
     private readonly PresetCoordinator _coordinator;
     private readonly AudioDeviceService _audioDevices;
+    private readonly AudioDeviceWatcher _deviceWatcher;
     private readonly AudioRoutingService _routing;
     private readonly DefaultDeviceGuard _defaultGuard;
     private readonly ChannelBoostService _channelBoosts;
@@ -33,6 +34,7 @@ public sealed class MainViewModel : ObservableObject
         ProcessWatcher watcher,
         PresetCoordinator coordinator,
         AudioDeviceService audioDevices,
+        AudioDeviceWatcher deviceWatcher,
         AudioRoutingService routing,
         DefaultDeviceGuard defaultGuard,
         ChannelBoostService channelBoosts,
@@ -42,6 +44,7 @@ public sealed class MainViewModel : ObservableObject
         _watcher = watcher;
         _coordinator = coordinator;
         _audioDevices = audioDevices;
+        _deviceWatcher = deviceWatcher;
         _routing = routing;
         _defaultGuard = defaultGuard;
         _channelBoosts = channelBoosts;
@@ -68,6 +71,7 @@ public sealed class MainViewModel : ObservableObject
         _channelBoosts.RedirectionsChanged += OnRedirectionsChanged;
         _channelBoosts.VirtualDevicesChanged += OnVirtualDevicesChanged;
         _channelBoosts.SettingsChanged += OnBoostSettingsChanged;
+        _deviceWatcher.DevicesChanged += OnAudioDevicesChanged;
     }
 
     public ObservableCollection<MappingRowViewModel> Mappings { get; } = [];
@@ -779,6 +783,14 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private void OnActivity(string message) => Dispatch(() => Log(message));
+
+    /// <summary>
+    /// Windows has gained or lost a playback endpoint. Rebuild the pickers from the list the watcher
+    /// already enumerated — silently, because the pickers changing is the whole message and a headset
+    /// that sleeps and wakes should not fill the activity log.
+    /// </summary>
+    private void OnAudioDevicesChanged(IReadOnlyList<AudioDevice> devices) =>
+        Dispatch(() => ApplyOutputDevices(devices));
 
     /// <summary>
     /// Sonar has told us which endpoints are its own. Rebuild the pickers so any virtual device that
