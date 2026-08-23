@@ -50,6 +50,12 @@ Against that base URL:
 | `GET` | `/classicRedirections` | which Windows endpoint each channel plays out of |
 | `GET` | `/audioDevices` | every endpoint Sonar knows, with `isVad` |
 | `PUT` | `/configs` | saving a whole config — the only way to set `data.generalGain` |
+| `GET` | `/v1/chatMix` | the game/chat balance, and whether ChatMix exists on this setup |
+| `PUT` | `/v1/chatMix?balance=` | setting the balance |
+
+ChatMix is the one route with a `/v1` prefix — `/chatMix` is a 404 — and its balance binds from the
+query string. Sent as a JSON body instead, Sonar answers `200` and writes `0`, so a body would look
+like it worked and silently centre the mix.
 
 Any transport failure invalidates the cached URL and the call is retried once against a freshly
 discovered endpoint, so restarting GG (which hands Sonar a new port) heals without restarting the app.
@@ -133,6 +139,26 @@ Only presets this app actually boosted are touched — the ids are recorded in `
 Volume Boost set by hand in GG is never reset. That record is persisted, so unticking the feature
 tomorrow still undoes what was applied today, and a restore that cannot reach Sonar keeps its record and
 retries rather than forgetting what it changed.
+
+## Default ChatMix
+
+Sonar's **ChatMix** balances the game and chat audio streams — centred is full volume of both, and
+moving towards one end turns the other down. It normally lives on a dial on the headset, and GG has no
+setting for where it should start, so a GG restart or a stray bump of the dial leaves it wherever it
+landed.
+
+**Default ChatMix** puts your balance back **once, each time the app connects to Sonar** — at startup,
+and again after a GG restart. It is deliberately not held: turn the dial afterwards and it stays where
+you put it until the next reconnect. Holding it would mean fighting the hardware dial every few seconds,
+which is the opposite of what the dial is for.
+
+The slider runs from full Game to full Chat. `ChatMixService` polls `/v1/chatMix` on its own, and the
+latch that stops it re-writing is cleared the moment a poll fails — that single fact is what makes the
+value come back after GG restarts. Moving the slider re-arms it immediately rather than waiting for the
+next reconnect.
+
+Off by default. ChatMix only exists for sources with separate game and chat audio inputs; where Sonar
+reports it as unavailable the control greys out and says which state it reported.
 
 ## Settings
 

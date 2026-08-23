@@ -83,6 +83,21 @@ public sealed class AppSettings
     [JsonPropertyName("boostedConfigs")]
     public List<BoostedConfig> BoostedConfigs { get; set; } = [];
 
+    /// <summary>
+    /// Pushes <see cref="ChatMixBalance"/> to Sonar once each time this app connects to it — at
+    /// startup, and again after a GG restart. Deliberately not held: the headset dial stays usable
+    /// afterwards, and the value is only put back at the next reconnect. Off by default.
+    /// </summary>
+    [JsonPropertyName("applyChatMix")]
+    public bool ApplyChatMix { get; set; }
+
+    /// <summary>
+    /// The game/chat balance to start each session at: -1 is full game, 1 is full chat, 0 is Sonar's
+    /// own centre. See <see cref="SonarChatMix"/> for the range Sonar accepts.
+    /// </summary>
+    [JsonPropertyName("chatMixBalance")]
+    public double ChatMixBalance { get; set; }
+
     /// <summary>Derived, not persisted — it was being written to settings.json as a stray key.</summary>
     [JsonIgnore]
     public int ClampedPollInterval => Math.Clamp(PollIntervalSeconds, 1, 30);

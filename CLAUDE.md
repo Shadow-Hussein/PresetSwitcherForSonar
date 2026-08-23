@@ -36,7 +36,8 @@ ProcessWatcher ────────────────┼-> PresetCoord
       │            AudioRoutingService ─┘              │             └-> TrayIconHost
       └───────────────> DefaultDeviceGuard ────────────┤
 AudioDeviceService ─────> both audio services          │
-SonarClient ────────────> ChannelBoostService ─────────┘
+SonarClient ────────────> ChannelBoostService ─────────┤
+SonarClient ────────────> ChatMixService ──────────────┘
 ```
 
 `ProcessWatcher` feeds `DefaultDeviceGuard` too: it reports *every* process name, not just mapped ones
@@ -96,6 +97,38 @@ Traps specific to it:
   `/audioDevices`, with `AudioDevice.LooksLikeSonarVirtual` as the offline fallback). The other pickers
   keep them on purpose — routing an app *to* "Sonar - Gaming", or holding it as the Windows default, are
   both legitimate.
+
+**`ChatMixService` is a third independent poller** and the only caller of `SonarClient.SetChatMixAsync`.
+It is keyed on nothing but the connection, which is why it is neither part of `PresetCoordinator` (keyed
+on running processes) nor of `ChannelBoostService` (keyed on Sonar's redirection state). Its traps:
+
+- **`/v1/chatMix` is the one `/v1`-prefixed route in the app.** `/chatMix` is a 404.
+- **The balance binds from the query string, not the body.** `PUT /v1/chatMix?balance=0.4` works;
+  the same value as a JSON body answers **200 and writes 0**, because the parameter falls back to its
+  default. A body here is a silent wrong value, not an error — this was confirmed against a live GG, so
+  do not "make it consistent" with `PutConfigAsync`.
+- Range is -1 to 1 and Sonar answers 400 outside it. `-1` is full game, `1` is full chat; that sign
+  convention is **not** derivable from the API — the resulting gains are applied below
+  `/volumeSettings/classic`, whose numbers do not move with the balance.
+- **Values do not round-trip.** Sonar stores the balance as a float, so 0.75 reads back as 0.75000006
+  and 0.35 as 0.34999996. `BalanceEpsilon` exists for that, not as an optimisation.
+- **Apply-once is the entire design, and `_applied = false` on a failed poll is the whole mechanism.**
+  The write happens on the transition into "reachable" and never again until that transition repeats, so
+  the headset dial stays usable. Holding the value instead would mean fighting the hardware every five
+  seconds. `UpdateSettings` sets `_invalidated` so a slider move takes effect now rather than at the
+  next reconnect.
+- A rejected value latches too, so a balance Sonar refuses is not retried every tick.
+- Nothing is persisted back — unlike the boost, this writes transient state on Sonar rather than editing
+  a preset, so there is no `BoostedConfigs` analogue and nothing to restore on release.
+- `state` is the availability gate and its full value set is undocumented; only `"enabled"` is treated as
+  usable, and anything else is logged verbatim, once per transition.
+- The poll runs even with the feature switched off, so the UI can grey the control out on a machine
+  without ChatMix hardware before the user ever ticks the box.
+
+The `Slider` in `Views/Theme.xaml` is declared low in the dictionary on purpose: it reuses
+`ScrollPageButton` for the click-in-the-track areas, and `StaticResource` only sees keys above it. Its
+0 marker is a drawn `Rectangle`, not a `TickBar` — `TickFrequency` is 0.01, which would paint two
+hundred ticks. The XAML binds it with `Delay=400`; without that, every pixel of a drag runs `Persist()`.
 
 **`AppSettings` is a single mutable instance shared by reference** between the coordinator and the view
 model. Every write goes through `MainViewModel.Persist()` → `SettingsStore.Save` + `coordinator.UpdateSettings`.

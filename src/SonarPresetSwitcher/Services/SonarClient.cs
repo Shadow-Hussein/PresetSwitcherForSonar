@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -17,6 +18,8 @@ namespace SonarPresetSwitcher.Services;
 ///   GET  /classicRedirections     which Windows endpoint each channel plays out of
 ///   GET  /audioDevices            every endpoint Sonar knows, with isVad
 ///   PUT  /configs                 save a whole config — the only way to set data.generalGain
+///   GET  /v1/chatMix              the game/chat balance, and whether ChatMix is available at all
+///   PUT  /v1/chatMix?balance=     set the balance — note the /v1 prefix and the query parameter
 ///
 /// Every call goes through <see cref="SendAsync"/>, which re-runs discovery and retries once when the
 /// transport fails — that is what makes the app survive a GG restart handing Sonar a new port.
@@ -133,6 +136,33 @@ public sealed class SonarClient : IDisposable
     public async Task<bool> PutConfigAsync(JsonObject config, CancellationToken ct = default)
     {
         using var response = await SendAsync(HttpMethod.Put, "/configs", ct, config.ToJsonString())
+            .ConfigureAwait(false);
+
+        return response is { IsSuccessStatusCode: true };
+    }
+
+    /// <summary>
+    /// The current ChatMix balance and availability, or null when Sonar could not be reached.
+    ///
+    /// The <c>/v1</c> prefix is not a typo — see <see cref="SonarChatMix"/>; every other route here
+    /// sits at the root, and <c>/chatMix</c> answers 404.
+    /// </summary>
+    public async Task<SonarChatMix?> GetChatMixAsync(CancellationToken ct = default) =>
+        await GetJsonAsync<SonarChatMix>("/v1/chatMix", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Sets the ChatMix balance, -1 (game) to 1 (chat). Sonar answers 400 outside that range.
+    ///
+    /// The value goes in the query string. Sent as a JSON body instead, Sonar answers 200 and writes 0
+    /// — the parameter binds to its default — so this must never be "tidied" into a body like
+    /// <see cref="PutConfigAsync"/>. Invariant formatting for the same reason: a comma decimal
+    /// separator from the user's locale would not parse.
+    /// </summary>
+    public async Task<bool> SetChatMixAsync(double balance, CancellationToken ct = default)
+    {
+        var value = SonarChatMix.Clamp(balance).ToString(CultureInfo.InvariantCulture);
+
+        using var response = await SendAsync(HttpMethod.Put, $"/v1/chatMix?balance={value}", ct)
             .ConfigureAwait(false);
 
         return response is { IsSuccessStatusCode: true };

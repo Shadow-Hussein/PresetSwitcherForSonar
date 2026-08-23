@@ -19,6 +19,7 @@ public partial class App : Application
     private DefaultDeviceGuard? _defaultGuard;
     private PresetCoordinator? _coordinator;
     private ChannelBoostService? _channelBoosts;
+    private ChatMixService? _chatMix;
     private TrayIconHost? _tray;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -52,10 +53,11 @@ public partial class App : Application
         _defaultGuard = new DefaultDeviceGuard(_audioDevices, _watcher, settings);
         _coordinator = new PresetCoordinator(_client, _watcher, _routing, settings);
         _channelBoosts = new ChannelBoostService(_client, settings);
+        _chatMix = new ChatMixService(_client, settings);
 
         var viewModel = new MainViewModel(
             _client, _watcher, _coordinator, _audioDevices, _deviceWatcher, _routing, _defaultGuard,
-            _channelBoosts, settings);
+            _channelBoosts, _chatMix, settings);
         var window = new MainWindow(viewModel);
         MainWindow = window;
 
@@ -69,6 +71,7 @@ public partial class App : Application
         _watcher.Start();
         _defaultGuard.Start();
         _channelBoosts.Start();
+        _chatMix.Start();
         _deviceWatcher.Start();
     }
 
@@ -78,6 +81,7 @@ public partial class App : Application
         _coordinator?.Dispose();
         _defaultGuard?.Dispose();
         _channelBoosts?.Dispose();
+        _chatMix?.Dispose();
         _deviceWatcher?.Dispose();
         _routing?.Dispose();
         _watcher?.Dispose();

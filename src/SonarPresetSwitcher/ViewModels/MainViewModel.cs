@@ -18,6 +18,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly AudioRoutingService _routing;
     private readonly DefaultDeviceGuard _defaultGuard;
     private readonly ChannelBoostService _channelBoosts;
+    private readonly ChatMixService _chatMix;
     private readonly AppSettings _settings;
 
     private bool _connected;
@@ -38,6 +39,7 @@ public sealed class MainViewModel : ObservableObject
         AudioRoutingService routing,
         DefaultDeviceGuard defaultGuard,
         ChannelBoostService channelBoosts,
+        ChatMixService chatMix,
         AppSettings settings)
     {
         _client = client;
@@ -48,6 +50,7 @@ public sealed class MainViewModel : ObservableObject
         _routing = routing;
         _defaultGuard = defaultGuard;
         _channelBoosts = channelBoosts;
+        _chatMix = chatMix;
         _settings = settings;
 
         foreach (var mapping in settings.Mappings)
@@ -71,6 +74,8 @@ public sealed class MainViewModel : ObservableObject
         _channelBoosts.RedirectionsChanged += OnRedirectionsChanged;
         _channelBoosts.VirtualDevicesChanged += OnVirtualDevicesChanged;
         _channelBoosts.SettingsChanged += OnBoostSettingsChanged;
+        _chatMix.Activity += OnActivity;
+        _chatMix.AvailabilityChanged += OnChatMixAvailabilityChanged;
         _deviceWatcher.DevicesChanged += OnAudioDevicesChanged;
     }
 
@@ -175,6 +180,22 @@ public sealed class MainViewModel : ObservableObject
         "Only presets this app actually boosted are touched; a Volume Boost you set yourself in GG is " +
         "never reset. The record survives a restart, so unticking the feature tomorrow still undoes " +
         "what was applied today.";
+
+    /// <summary>False until Sonar has reported ChatMix as available; the slider and box grey out.</summary>
+    public bool ChatMixSupported => _chatMix.IsSupported;
+
+    public string ChatMixTooltip => ChatMixSupported
+        ? "ChatMix balances the game and chat audio streams — centred is full volume of both, and " +
+          "moving towards one end turns the other down.\n\n" +
+          "It normally lives on the headset dial, and GG has no setting for where it should start, so " +
+          "a GG restart or a stray bump of the dial leaves it wherever it landed. This puts your " +
+          "balance back once, each time the app connects to Sonar.\n\n" +
+          "It is not held: turn the dial afterwards and it stays where you put it until the next time " +
+          "Sonar reconnects."
+        : _chatMix.LastState is null
+            ? "Waiting for Sonar — ChatMix availability is not known yet."
+            : $"ChatMix is not available on this setup (Sonar reports \"{_chatMix.LastState}\"). " +
+              "It needs a source with separate game and chat audio inputs.";
 
     // ---- settings-backed properties -------------------------------------------------------
 
@@ -314,6 +335,40 @@ public sealed class MainViewModel : ObservableObject
 
         return null;
     }
+
+    public bool ApplyChatMix
+    {
+        get => _settings.ApplyChatMix;
+        set
+        {
+            if (_settings.ApplyChatMix == value)
+                return;
+
+            _settings.ApplyChatMix = value;
+            OnPropertyChanged();
+            Persist();
+        }
+    }
+
+    /// <summary>-1 full game, 1 full chat, 0 centred. Bound to the slider with a delay, so a drag
+    /// saves once rather than at every pixel.</summary>
+    public double ChatMixBalance
+    {
+        get => _settings.ChatMixBalance;
+        set
+        {
+            var clamped = SonarChatMix.Clamp(value);
+            if (_settings.ChatMixBalance == clamped)
+                return;
+
+            _settings.ChatMixBalance = clamped;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ChatMixBalanceText));
+            Persist();
+        }
+    }
+
+    public string ChatMixBalanceText => SonarChatMix.Describe(_settings.ChatMixBalance);
 
     public bool ShowNotifications
     {
@@ -763,6 +818,7 @@ public sealed class MainViewModel : ObservableObject
         _coordinator.UpdateSettings(_settings);
         _defaultGuard.UpdateSettings(_settings);
         _channelBoosts.UpdateSettings(_settings);
+        _chatMix.UpdateSettings(_settings);
     }
 
     // ---- coordinator events ------------------------------------------------------------------
@@ -822,6 +878,16 @@ public sealed class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(KeepWindowsDefaultSupported));
         OnPropertyChanged(nameof(KeepWindowsDefaultTooltip));
+    });
+
+    /// <summary>
+    /// Whether this setup has ChatMix at all is only known once Sonar has answered, which is after the
+    /// window has bound — and it changes again if the headset is unplugged. Same re-read as the guard's.
+    /// </summary>
+    private void OnChatMixAvailabilityChanged() => Dispatch(() =>
+    {
+        OnPropertyChanged(nameof(ChatMixSupported));
+        OnPropertyChanged(nameof(ChatMixTooltip));
     });
 
     private void Log(string message)

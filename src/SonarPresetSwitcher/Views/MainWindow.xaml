@@ -308,6 +308,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <Grid Grid.Row="0" Margin="0,0,0,10">
@@ -455,6 +456,71 @@
                                 </ItemsControl>
                             </ScrollViewer>
                         </Grid>
+
+                        <!--
+                            ChatMix is Sonar's game/chat balance, normally driven by the headset dial.
+                            Applied once per connection rather than held, so the dial still works.
+                        -->
+                        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                            <Border Height="1"
+                                    Background="{StaticResource Line}"
+                                    Margin="0,0,0,12" />
+
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="DEFAULT CHATMIX"
+                                           Style="{StaticResource SectionHeader}"
+                                           Margin="0,0,12,0" />
+
+                                <CheckBox Content="Enabled"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,18,8"
+                                          IsChecked="{Binding ApplyChatMix}"
+                                          IsEnabled="{Binding ChatMixSupported}"
+                                          ToolTip="{Binding ChatMixTooltip}" />
+
+                                <TextBlock Text="Game"
+                                           Foreground="{StaticResource Dim}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,8"
+                                           ToolTip="{Binding ChatMixTooltip}" />
+
+                                <!--
+                                    Delay is load-bearing: without it every pixel of a drag runs
+                                    Persist(), which writes settings.json and fans out to four services.
+                                -->
+                                <Slider Width="220"
+                                        Minimum="-1"
+                                        Maximum="1"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        SmallChange="0.01"
+                                        LargeChange="0.1"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,8,8"
+                                        IsEnabled="{Binding ChatMixSupported}"
+                                        Value="{Binding ChatMixBalance, Mode=TwoWay, Delay=400}"
+                                        ToolTip="{Binding ChatMixTooltip}" />
+
+                                <TextBlock Text="Chat"
+                                           Foreground="{StaticResource Dim}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,12,8"
+                                           ToolTip="{Binding ChatMixTooltip}" />
+
+                                <TextBlock Text="{Binding ChatMixBalanceText}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,0,8"
+                                           MinWidth="64"
+                                           ToolTip="{Binding ChatMixTooltip}" />
+                            </StackPanel>
+
+                            <TextBlock Text="Applied once each time the app connects to Sonar, so every session starts here. Your headset dial still works afterwards."
+                                       Foreground="{StaticResource Dim}"
+                                       FontSize="11"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
                     </Grid>
                 </TabItem>
 
