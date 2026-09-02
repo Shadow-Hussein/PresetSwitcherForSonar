@@ -72,6 +72,7 @@ public sealed class MappingRowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
     /// <summary>True while the mapped executable is in the process table.</summary>
     public bool IsRunning
     {
@@ -118,6 +119,7 @@ public sealed class MappingRowViewModel : ObservableObject
         Suppressed(() => SelectedOutputDevice = match);
     }
 
+    /// <summary>
     private void Suppressed(Action action)
     {
         _suppressNotifications = true;

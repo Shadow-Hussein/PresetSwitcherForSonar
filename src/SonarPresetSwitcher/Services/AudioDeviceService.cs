@@ -138,7 +138,15 @@ public sealed class AudioDeviceService
     }
 
     /// <summary>Active render endpoints, alphabetically. Empty when enumeration fails.</summary>
-    public IReadOnlyList<AudioDevice> GetRenderDevices()
+    public IReadOnlyList<AudioDevice> GetRenderDevices() => GetDevices(EDataFlow.Render);
+
+    /// <summary>
+    /// Active capture endpoints, alphabetically — the recording devices, including Sonar's own virtual
+    /// microphones. Empty when enumeration fails.
+    /// </summary>
+    public IReadOnlyList<AudioDevice> GetCaptureDevices() => GetDevices(EDataFlow.Capture);
+
+    private IReadOnlyList<AudioDevice> GetDevices(EDataFlow flow)
     {
         IMMDeviceEnumerator? enumerator = null;
         IMMDeviceCollection? collection = null;
@@ -147,7 +155,7 @@ public sealed class AudioDeviceService
         {
             enumerator = MMDeviceApi.CreateEnumerator();
 
-            if (enumerator.EnumAudioEndpoints(EDataFlow.Render, MMDeviceApi.DeviceStateActive, out collection) != 0 ||
+            if (enumerator.EnumAudioEndpoints(flow, MMDeviceApi.DeviceStateActive, out collection) != 0 ||
                 collection is null)
             {
                 return [];
@@ -183,7 +191,7 @@ public sealed class AudioDeviceService
         }
         catch (Exception ex) when (ex is COMException or NotSupportedException or InvalidCastException)
         {
-            Debug.WriteLine($"GetRenderDevices failed: {ex}");
+            Debug.WriteLine($"GetDevices({flow}) failed: {ex}");
             return [];
         }
         finally
@@ -208,6 +216,23 @@ public sealed class AudioDeviceService
         catch (Exception ex)
         {
             Debug.WriteLine($"SetProcessOutput({processId}) failed: {ex}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Points one process at a capture endpoint — its recording device. Null or empty clears the
+    /// override, handing the process back to the Windows default.
+    /// </summary>
+    public bool SetProcessInput(int processId, string? mmDeviceId)
+    {
+        try
+        {
+            return _policy.Value.SetProcessInput(processId, mmDeviceId);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"SetProcessInput({processId}) failed: {ex}");
             return false;
         }
     }

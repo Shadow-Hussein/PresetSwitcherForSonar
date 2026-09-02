@@ -21,24 +21,36 @@ namespace SonarPresetSwitcher.Services;
 ///     silently replaces it. `_applied` is therefore keyed on the *pair* — device and config id — so a
 ///     switch re-arms the write while a device that has not moved does not.
 ///
+/// **Both mixer modes are handled, through different routes.** Classic sends each channel straight to a
+/// Windows endpoint; streamer folds them into a Monitoring and a Streaming mix. The rule keys on the
+/// device the user *hears*, so streamer mode matches Monitoring and not Streaming — see
+/// <see cref="ResolveDevicesAsync"/>. The write path is the same either way: configs are mode-independent.
+///
 /// Deliberately not part of <see cref="PresetCoordinator"/>: that is the preset decision layer, keyed
 /// on running processes, and the only caller of <see cref="SonarClient.SelectAsync"/>. This is keyed on
 /// Sonar's redirection state, so it polls on its own in the same shape as the coordinator's status loop.
 /// </summary>
 public sealed class ChannelBoostService : IDisposable
 {
-    private const string ClassicMode = "classic";
-
     /// <summary>Sonar's slider moves in 0.1 dB steps, so anything under half a step is already there.</summary>
     private const double GainEpsilon = 0.05;
+
+    // Keys for the announcement latch, not values Sonar ever sends.
+    private const string AnnouncedClassic = "classic";
+    private const string AnnouncedStreamer = "streamer";
+    private const string AnnouncedNoMonitoring = "streamer-no-monitoring";
+    private const string AnnouncedUnknown = "unknown";
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ReconnectInterval = TimeSpan.FromSeconds(10);
 
+    private static readonly IReadOnlyDictionary<string, string> NoDevices =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
-    /// The channels this manages. Both are spelled the same in <c>/classicRedirections</c> and in the
-    /// configs' <c>virtualAudioDevice</c>, which is why no mapping table is needed; chat and mic are
-    /// not, so adding them later would need one.
+    /// The channels this manages. Both are spelled the same in <c>/classicRedirections</c>, in the roles
+    /// of <c>/streamRedirections</c>, and in the configs' <c>virtualAudioDevice</c>, which is why no
+    /// mapping table is needed; chat and mic are not, so adding them later would need one.
     /// </summary>
     private static readonly string[] Channels = [SonarRedirection.GameChannel, SonarRedirection.MediaChannel];
 
@@ -53,7 +65,10 @@ public sealed class ChannelBoostService : IDisposable
     private AppSettings _settings;
     private Task? _loop;
     private bool _reachable;
-    private bool _streamerModeAnnounced;
+
+    /// <summary>Which routing condition was last written to the log. See <see cref="Announce"/>.</summary>
+    private string? _announced;
+
     private volatile bool _invalidated;
 
     public ChannelBoostService(SonarClient client, AppSettings settings)
@@ -75,6 +90,12 @@ public sealed class ChannelBoostService : IDisposable
     public event Action? VirtualDevicesChanged;
 
     /// <summary>
+    /// Raised when <see cref="LastMode"/> changes, for the mode indicator in the status card. Carries
+    /// null when Sonar goes away.
+    /// </summary>
+    public event Action<string?>? ModeChanged;
+
+    /// <summary>
     /// Raised when this service has changed <see cref="AppSettings.BoostedConfigs"/> and it needs
     /// saving. Fired once at the end of a tick rather than per edit, so the list is never being
     /// mutated here while the UI thread is serialising it.
@@ -87,6 +108,13 @@ public sealed class ChannelBoostService : IDisposable
     /// </summary>
     public IReadOnlySet<string> VirtualDeviceIds { get; private set; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Sonar's mixer mode as of the last poll, or null while Sonar is unreachable. This service already
+    /// reads <c>/mode</c> every tick, so it publishes it rather than the app growing a second poller for
+    /// one cheap route.
+    /// </summary>
+    public string? LastMode { get; private set; }
 
     public void Start() => _loop ??= Task.Run(() => LoopAsync(_cts.Token));
 
@@ -134,10 +162,45 @@ public sealed class ChannelBoostService : IDisposable
         {
             _invalidated = false;
             _applied.Clear();
+
+            // Re-raise the markers even if the redirections have not moved: a row just added for the
+            // device already in use starts life without one, and would never be told otherwise.
+            _lastRaised.Clear();
         }
 
         var settings = _settings;
         var enabled = settings.ApplyChannelBoost && settings.ChannelBoosts.Count > 0;
+
+        // Read before the feature-disabled bail-out below, not after: the status card shows the mode
+        // whether or not the boost is switched on, in the same way the ChatMix poll keeps running while
+        // its feature is off so the UI can grey the control out.
+        var mode = await _client.GetModeAsync(ct).ConfigureAwait(false);
+        if (mode is null)
+        {
+            MarkUnreachable();
+            return;
+        }
+
+        _reachable = true;
+        RaiseMode(mode);
+
+        // Once per connection, and needed before the first rule exists: it is what the device picker
+        // filters Sonar's own endpoints out with.
+        await RefreshVirtualDevicesAsync(ct).ConfigureAwait(false);
+
+        // Nothing to resolve a device for: no rules to mark "in use", and nothing outstanding to put
+        // back. Resolving anyway would poll a routing route every five seconds for a feature the user
+        // has never touched — the mode above is enough for the status card on its own.
+        if (settings.ChannelBoosts.Count == 0 && settings.BoostedConfigs.Count == 0)
+            return;
+
+        var devices = await ResolveDevicesAsync(mode, ct).ConfigureAwait(false);
+        if (devices is null)
+            return;
+
+        // Raised before the bail-out below too, so the "in use" dots stay live while the user is still
+        // setting rules up and has not ticked the feature on yet.
+        RaiseRedirections(devices);
 
         if (!enabled)
         {
@@ -149,45 +212,6 @@ public sealed class ChannelBoostService : IDisposable
                 return;
         }
 
-        var mode = await _client.GetModeAsync(ct).ConfigureAwait(false);
-        if (mode is null)
-        {
-            MarkUnreachable();
-            return;
-        }
-
-        _reachable = true;
-        await RefreshVirtualDevicesAsync(ct).ConfigureAwait(false);
-
-        if (!string.Equals(mode, ClassicMode, StringComparison.OrdinalIgnoreCase))
-        {
-            // Streamer mode redirects through a different set of routes entirely, so the device this
-            // reads would not be the one in use. Say so once, not every five seconds.
-            if (!_streamerModeAnnounced)
-            {
-                _streamerModeAnnounced = true;
-                Activity?.Invoke("Per-device volume boost paused — Sonar is in streamer mode.");
-            }
-
-            _applied.Clear();
-            return;
-        }
-
-        if (_streamerModeAnnounced)
-        {
-            _streamerModeAnnounced = false;
-            Activity?.Invoke("Sonar is back in classic mode — per-device volume boost resumed.");
-        }
-
-        var redirections = await _client.GetClassicRedirectionsAsync(ct).ConfigureAwait(false);
-        if (redirections is null)
-        {
-            MarkUnreachable();
-            return;
-        }
-
-        RaiseRedirections(redirections);
-
         // Work out what is wanted before fetching any config: /configs/selected carries the full EQ
         // payload for every channel, so it is only worth pulling when a rule actually matches.
         var wanted = new List<(string Channel, string DeviceId, double Db, ChannelBoostRule Rule)>();
@@ -196,8 +220,7 @@ public sealed class ChannelBoostService : IDisposable
         {
             foreach (var channel in Channels)
             {
-                var deviceId = DeviceFor(redirections, channel);
-                if (string.IsNullOrWhiteSpace(deviceId))
+                if (!devices.TryGetValue(channel, out var deviceId) || string.IsNullOrWhiteSpace(deviceId))
                     continue;
 
                 var rule = FindRule(settings, deviceId);
@@ -278,6 +301,119 @@ public sealed class ChannelBoostService : IDisposable
 
         if (dirty)
             SettingsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Which Windows endpoint the user is hearing each channel on, whichever way Sonar is routing.
+    ///
+    /// Classic reports that directly. Streamer mode does not: every channel goes into a Monitoring mix
+    /// and a Streaming mix, each with its own endpoint. Only Monitoring is matched — it is the one the
+    /// user hears, which is what a boost rule means, whereas Streaming normally feeds a virtual endpoint
+    /// the rule picker filters out anyway. Matching both would also let two rules fight over the single
+    /// gain a preset has.
+    /// </summary>
+    /// <returns>
+    /// The map, empty when nothing is playing out of a device a rule could name; null when the tick must
+    /// not go on — Sonar unreachable, or a mode whose routing table this does not know how to read.
+    /// </returns>
+    private async Task<IReadOnlyDictionary<string, string>?> ResolveDevicesAsync(
+        string mode, CancellationToken ct)
+    {
+        if (SonarMode.Is(mode, SonarMode.Classic))
+        {
+            var redirections = await _client.GetClassicRedirectionsAsync(ct).ConfigureAwait(false);
+            if (redirections is null)
+            {
+                MarkUnreachable();
+                return null;
+            }
+
+            Announce(AnnouncedClassic, "Sonar is in classic mode.");
+            return Map(channel => DeviceFor(redirections, channel));
+        }
+
+        if (SonarMode.Is(mode, SonarMode.Streamer))
+        {
+            var monitoringOn = await _client.GetStreamMonitoringEnabledAsync(ct).ConfigureAwait(false);
+            if (monitoringOn is null)
+            {
+                MarkUnreachable();
+                return null;
+            }
+
+            if (!monitoringOn.Value)
+            {
+                // Nothing is being played back to the user at all, so there is no device to key a rule
+                // on, and anything outstanding is released rather than left applied.
+                Announce(AnnouncedNoMonitoring,
+                    "Stream monitoring is off — nothing for the volume boost to follow.");
+
+                return NoDevices;
+            }
+
+            var redirections = await _client.GetStreamRedirectionsAsync(ct).ConfigureAwait(false);
+            if (redirections is null)
+            {
+                MarkUnreachable();
+                return null;
+            }
+
+            Announce(AnnouncedStreamer,
+                "Sonar is in streamer mode — the volume boost now follows the Monitoring mix.");
+
+            var monitoring = redirections.FirstOrDefault(r =>
+                string.Equals(r.Id, StreamRedirection.MonitoringId, StringComparison.OrdinalIgnoreCase));
+
+            // Blank until streamer mode has actually been set up with an output device.
+            if (monitoring is null || string.IsNullOrWhiteSpace(monitoring.DeviceId))
+                return NoDevices;
+
+            return Map(channel => monitoring.IsRoleEnabled(channel) ? monitoring.DeviceId : null);
+        }
+
+        // A mode we do not recognise is a routing table we cannot read, so the device any rule would key
+        // on is unknown. Hold everything — the release records included, which is why this returns null
+        // rather than an empty map: dropping them would forget boosts we are still responsible for.
+        Announce($"{AnnouncedUnknown}:{mode}",
+            $"Per-device volume boost paused — Sonar reports an unknown mode (\"{mode}\").");
+
+        _applied.Clear();
+        RaiseRedirections(NoDevices);
+        return null;
+    }
+
+    /// <summary>Builds the channel-to-device map from whichever lookup the current mode calls for.</summary>
+    private static IReadOnlyDictionary<string, string> Map(Func<string, string?> deviceFor)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var channel in Channels)
+        {
+            var deviceId = deviceFor(channel);
+            if (!string.IsNullOrWhiteSpace(deviceId))
+                map[channel] = deviceId;
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// One line per transition, never per tick. A single latch rather than a flag per condition, so no
+    /// combination of mode and monitoring state can announce twice or go unannounced.
+    ///
+    /// Starting up in classic mode says nothing: that is the ordinary case, and the coordinator has just
+    /// logged the connection.
+    /// </summary>
+    private void Announce(string key, string message)
+    {
+        if (string.Equals(_announced, key, StringComparison.Ordinal))
+            return;
+
+        var first = _announced is null;
+        _announced = key;
+
+        if (!first || !string.Equals(key, AnnouncedClassic, StringComparison.Ordinal))
+            Activity?.Invoke(message);
     }
 
     /// <summary>
@@ -397,33 +533,35 @@ public sealed class ChannelBoostService : IDisposable
 
     /// <summary>
     /// Sonar is gone. Forget what was applied so it is re-applied on reconnect: GG can come back with
-    /// different redirections, and a different preset selected.
+    /// different redirections, in a different mode, and with a different preset selected.
     /// </summary>
     private void MarkUnreachable()
     {
         _reachable = false;
         _applied.Clear();
-        RaiseRedirections([]);
+        _announced = null;
+        RaiseMode(null);
+        RaiseRedirections(NoDevices);
     }
 
-    private void RaiseRedirections(IReadOnlyList<SonarRedirection> redirections)
+    private void RaiseMode(string? mode)
     {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.Equals(LastMode, mode, StringComparison.OrdinalIgnoreCase))
+            return;
 
-        foreach (var channel in Channels)
-        {
-            var deviceId = DeviceFor(redirections, channel);
-            if (!string.IsNullOrWhiteSpace(deviceId))
-                map[channel] = deviceId;
-        }
+        LastMode = mode;
+        ModeChanged?.Invoke(mode);
+    }
 
+    private void RaiseRedirections(IReadOnlyDictionary<string, string> map)
+    {
         // The redirections are re-read every few seconds; only tell the UI when they actually moved.
         if (map.Count == _lastRaised.Count &&
             map.All(kv => _lastRaised.TryGetValue(kv.Key, out var seen) &&
                           string.Equals(seen, kv.Value, StringComparison.OrdinalIgnoreCase)))
             return;
 
-        _lastRaised = map;
+        _lastRaised = new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase);
         RedirectionsChanged?.Invoke(map);
     }
 

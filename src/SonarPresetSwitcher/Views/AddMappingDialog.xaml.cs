@@ -14,6 +14,7 @@ public sealed record ProcessEntry(string ProcessName, string DisplayName, string
 public partial class AddMappingDialog : Window
 {
     private readonly ObservableCollection<ProcessEntry> _visible = [];
+    private readonly bool _recordingApp;
     private List<ProcessEntry> _all = [];
 
     public AddMappingDialog(IEnumerable<SonarConfig> presets)
@@ -21,8 +22,35 @@ public partial class AddMappingDialog : Window
         InitializeComponent();
 
         PresetBox.ItemsSource = presets.ToList();
-        if (PresetBox.Items.Count > 0)
-            PresetBox.SelectedIndex = 0;
+
+        // Land on a real preset, not the "use the default" sentinel: naming one is what this dialog is
+        // for, and inheriting is the deliberate choice.
+        PresetBox.SelectedItem = presets.FirstOrDefault(p => !SonarConfig.IsInherit(p.Id))
+            ?? presets.FirstOrDefault();
+
+        ProcessList.ItemsSource = _visible;
+        LoadProcesses();
+    }
+
+    /// <summary>
+    /// The same picker without the preset half, for adding a recording app. Only
+    /// <see cref="GameMapping.ProcessName"/> and <see cref="GameMapping.DisplayName"/> of
+    /// <see cref="Result"/> are meaningful in this mode — the caller builds its own
+    /// <see cref="RecordingApp"/> from those two.
+    /// </summary>
+    public AddMappingDialog(bool recordingApp)
+    {
+        InitializeComponent();
+
+        _recordingApp = recordingApp;
+
+        if (recordingApp)
+        {
+            Title = "Add recording app";
+            PresetLabel.Visibility = Visibility.Collapsed;
+            PresetBox.Visibility = Visibility.Collapsed;
+            AddButton.Content = "Add app";
+        }
 
         ProcessList.ItemsSource = _visible;
         LoadProcesses();
@@ -164,20 +192,25 @@ public partial class AddMappingDialog : Window
         AddButton.IsEnabled =
             ProcessList.SelectedItem is ProcessEntry &&
             !string.IsNullOrWhiteSpace(NameBox.Text) &&
-            PresetBox.SelectedItem is SonarConfig;
+            (_recordingApp || PresetBox.SelectedItem is SonarConfig);
     }
 
     private void OnAdd(object sender, RoutedEventArgs e)
     {
-        if (ProcessList.SelectedItem is not ProcessEntry entry || PresetBox.SelectedItem is not SonarConfig preset)
+        if (ProcessList.SelectedItem is not ProcessEntry entry)
+            return;
+
+        // In recording-app mode there is no preset to read, and the caller ignores those fields.
+        var preset = PresetBox.SelectedItem as SonarConfig;
+        if (!_recordingApp && preset is null)
             return;
 
         Result = new GameMapping
         {
             ProcessName = GameMapping.NormalizeProcessName(entry.ProcessName),
             DisplayName = NameBox.Text.Trim(),
-            PresetId = preset.Id,
-            PresetName = preset.Name,
+            PresetId = preset?.Id ?? "",
+            PresetName = preset?.Name ?? "",
             Enabled = true,
         };
 

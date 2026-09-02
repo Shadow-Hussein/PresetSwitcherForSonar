@@ -62,7 +62,8 @@
                      Padding="6,5"
                      TextChanged="OnFormChanged" />
 
-            <TextBlock Text="Game preset (My Presets — favourites first)"
+            <TextBlock x:Name="PresetLabel"
+                       Text="Game preset (My Presets — favourites first)"
                        Foreground="{StaticResource Dim}"
                        FontSize="11" />
             <ComboBox x:Name="PresetBox"

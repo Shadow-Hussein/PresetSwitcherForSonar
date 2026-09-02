@@ -54,6 +54,17 @@ public sealed class AppSettings
     public List<GameMapping> Mappings { get; set; } = [];
 
     /// <summary>
+    /// Points recording and streaming apps at a microphone, and optionally puts Sonar into streamer
+    /// mode while they run. Off by default: both halves write outside this app — one to a persistent
+    /// Windows per-app override, the other to Sonar's whole mixer.
+    /// </summary>
+    [JsonPropertyName("applyRecordingApps")]
+    public bool ApplyRecordingApps { get; set; }
+
+    [JsonPropertyName("recordingApps")]
+    public List<RecordingApp> RecordingApps { get; set; } = [];
+
+    /// <summary>
     /// Applies a saved Volume Boost to Sonar's Game and Media channels whenever Sonar starts playing
     /// that channel out of a device listed in <see cref="ChannelBoosts"/>. Off by default: it writes to
     /// the Sonar preset that is selected at the time.
@@ -97,6 +108,18 @@ public sealed class AppSettings
     /// </summary>
     [JsonPropertyName("chatMixBalance")]
     public double ChatMixBalance { get; set; }
+
+    /// <summary>
+    /// The Sonar mixer mode in force before this app switched to streamer mode for a mapping, or empty
+    /// when we have not switched.
+    ///
+    /// Persisted for the same reason <see cref="BoostedConfigs"/> is: it is the only record that the
+    /// mode Sonar is in now is one *we* put it in, so a crash, a restart or a GG restart still restores
+    /// what the user had rather than stranding them in streamer mode. Written only after Sonar accepted
+    /// the switch, and cleared only after it accepted the switch back.
+    /// </summary>
+    [JsonPropertyName("modeBeforeStreamer")]
+    public string ModeBeforeStreamer { get; set; } = "";
 
     /// <summary>Derived, not persisted — it was being written to settings.json as a stray key.</summary>
     [JsonIgnore]

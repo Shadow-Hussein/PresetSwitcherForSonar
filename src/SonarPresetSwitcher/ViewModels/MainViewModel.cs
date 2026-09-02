@@ -59,20 +59,27 @@ public sealed class MainViewModel : ObservableObject
         foreach (var rule in settings.ChannelBoosts)
             ChannelBoosts.Add(CreateBoostRow(rule));
 
+        foreach (var app in settings.RecordingApps)
+            RecordingApps.Add(CreateRecordingRow(app));
+
         AddMappingCommand = new RelayCommand(AddMapping);
         RemoveMappingCommand = new RelayCommand(RemoveMapping);
         AddChannelBoostCommand = new RelayCommand(AddChannelBoost);
         RemoveChannelBoostCommand = new RelayCommand(RemoveChannelBoost);
+        AddRecordingAppCommand = new RelayCommand(AddRecordingApp);
+        RemoveRecordingAppCommand = new RelayCommand(RemoveRecordingApp);
         RefreshCommand = new RelayCommand(async () => await RefreshAsync());
 
         _coordinator.StateChanged += OnCoordinatorStateChanged;
         _coordinator.Activity += OnActivity;
+        _coordinator.SettingsChanged += OnCoordinatorSettingsChanged;
         _routing.Activity += OnActivity;
         _defaultGuard.Activity += OnActivity;
         _defaultGuard.SupportChanged += OnDefaultGuardSupportChanged;
         _channelBoosts.Activity += OnActivity;
         _channelBoosts.RedirectionsChanged += OnRedirectionsChanged;
         _channelBoosts.VirtualDevicesChanged += OnVirtualDevicesChanged;
+        _channelBoosts.ModeChanged += OnSonarModeChanged;
         _channelBoosts.SettingsChanged += OnBoostSettingsChanged;
         _chatMix.Activity += OnActivity;
         _chatMix.AvailabilityChanged += OnChatMixAvailabilityChanged;
@@ -84,11 +91,26 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>"My Presets" — every Game-channel preset, favourites first.</summary>
     public ObservableCollection<SonarConfig> Presets { get; } = [];
 
+    /// <summary>
+    /// The same list for mapping rows, with "use the default from Settings" in front — the preset
+    /// analogue of <see cref="MappingOutputDevices"/>.
+    ///
+    /// Kept separate from <see cref="Presets"/> because the Settings default picker is bound to that
+    /// one, and a default that inherits from itself is meaningless.
+    /// </summary>
+    public ObservableCollection<SonarConfig> MappingPresets { get; } = [];
+
     /// <summary>Output devices for the global default picker: system default, then real devices.</summary>
     public ObservableCollection<AudioDevice> OutputDevices { get; } = [];
 
     /// <summary>Same list for mapping rows, with the "use the global default" entry in front.</summary>
     public ObservableCollection<AudioDevice> MappingOutputDevices { get; } = [];
+
+    /// <summary>
+    /// Recording devices for the per-mapping input picker — a different Windows enumeration from the
+    /// render one above, so Sonar's virtual microphones appear here and nowhere else.
+    /// </summary>
+    public ObservableCollection<AudioDevice> RecordingInputDevices { get; } = [];
 
     /// <summary>Real devices only — "system default" is meaningless when you are picking what it is.</summary>
     public ObservableCollection<AudioDevice> SystemDefaultDevices { get; } = [];
@@ -99,6 +121,9 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Real hardware only — Sonar's own virtual endpoints are excluded from this one.</summary>
     public ObservableCollection<AudioDevice> ChannelBoostDevices { get; } = [];
 
+    /// <summary>Recording and streaming apps, with their microphone and streamer-mode choice.</summary>
+    public ObservableCollection<RecordingAppRowViewModel> RecordingApps { get; } = [];
+
     public ObservableCollection<string> ActivityLog { get; } = [];
 
     public RelayCommand AddMappingCommand { get; }
@@ -108,6 +133,10 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand AddChannelBoostCommand { get; }
 
     public RelayCommand RemoveChannelBoostCommand { get; }
+
+    public RelayCommand AddRecordingAppCommand { get; }
+
+    public RelayCommand RemoveRecordingAppCommand { get; }
 
     public RelayCommand RefreshCommand { get; }
 
@@ -120,6 +149,38 @@ public sealed class MainViewModel : ObservableObject
           "Windows remembers the choice per executable, so it also applies the next time the game " +
           "launches — and a game that is already playing audio may need a restart to move over."
         : "Per-app audio routing is not available on this build of Windows.";
+
+    public string InputDeviceTooltip => AudioRoutingSupported
+        ? "For recording and streaming apps — OBS, Discord, a voice recorder. Sets the microphone the " +
+          "app captures from, which is the input half of Settings → Sound → Volume mixer. Point one at " +
+          "\"SteelSeries Sonar - Stream\" here and it picks that up the next time it launches.\n\n" +
+          "This is not a game's in-game mic. It overrides what Windows hands back when an app asks for " +
+          "the default microphone, so it does nothing for an app whose own audio settings name a " +
+          "device — set those to \"Default\" first. It also leaves the Windows communications default " +
+          "alone, which is the one most in-game voice chat asks for.\n\n" +
+          "\"Don't change\" is the default and means exactly that: the app's input is left alone, " +
+          "including anything you set by hand. Pick \"None — system default\" to actively clear an " +
+          "override.\n\n" +
+          "An app that is already recording has to be restarted to move over."
+        : "Per-app audio routing is not available on this build of Windows.";
+
+    public string RecordingAppsTooltip =>
+        "Points recording and streaming apps — OBS, Discord, a voice recorder — at a microphone, and " +
+        "optionally puts Sonar into streamer mode while they run.\n\n" +
+        "Neither half touches a game's in-game microphone: the device is an override of the Windows " +
+        "*default* mic, so an app whose own audio settings name a device ignores it.\n\n" +
+        "Off by default. With this unticked nothing is written at all — no device override, and no " +
+        "mode switch.";
+
+    public string StreamerModeTooltip =>
+        "Switches Sonar into streamer mode while this app is running, and back to the mode it was in " +
+        "once it exits.\n\n" +
+        "Streamer mode splits every channel into a Monitoring mix (what you hear) and a Streaming mix " +
+        "(what goes out), which is what a capture app needs — but it changes Sonar's whole mixer, not " +
+        "just this app's audio.\n\n" +
+        "Only a mode this app switched away from is ever restored: if you were already in streamer " +
+        "mode when the app launched, nothing is recorded and nothing is put back. The record survives " +
+        "a restart, so being killed mid-stream still leaves the mixer where you had it.";
 
     /// <summary>False when Windows will not let us move the default device; the row greys out.</summary>
     public bool KeepWindowsDefaultSupported => _defaultGuard.IsSupported;
@@ -161,6 +222,30 @@ public sealed class MainViewModel : ObservableObject
 
     public bool HasChannelBoosts => ChannelBoosts.Count > 0;
 
+    public bool HasRecordingApps => RecordingApps.Count > 0;
+
+    /// <summary>
+    /// Sonar's mixer mode for the status card, or "" while it is unknown — the chip hides itself then,
+    /// rather than claiming a mode the app has not actually read.
+    /// </summary>
+    public string SonarModeText =>
+        _channelBoosts.LastMode is { } mode ? $"{SonarMode.Describe(mode)} mode" : "";
+
+    public string SonarModeTooltip => _channelBoosts.LastMode switch
+    {
+        null => "Waiting for Sonar — the mixer mode is not known yet.",
+        var m when SonarMode.Is(m, SonarMode.Classic) =>
+            "Sonar is in classic mode: each channel plays straight out to its own Windows device.\n\n" +
+            "Per-device volume boost rules match that device.",
+        var m when SonarMode.Is(m, SonarMode.Streamer) =>
+            "Sonar is in streamer mode: every channel is folded into a Monitoring mix (what you hear) " +
+            "and a Streaming mix (what goes out), each with its own output device.\n\n" +
+            "Per-device volume boost rules match the Monitoring device, since that is the one you are " +
+            "listening on.",
+        var m => $"Sonar reports a mode this app does not recognise (\"{m}\"), so the per-device volume " +
+                 "boost is paused rather than guessing where the audio is going.",
+    };
+
     public string ChannelBoostTooltip =>
         "Sonar's Volume Boost (0-12 dB) is stored per preset, not per device, so a level that suits " +
         "speakers is wrong the moment the channel moves to a headset.\n\n" +
@@ -170,7 +255,9 @@ public sealed class MainViewModel : ObservableObject
         "Because Sonar has no per-device setting for this, the boost is written into whichever preset " +
         "is selected on that channel at the time, and that edit is permanent. Switching presets loads " +
         "a different boost, so it is re-applied after every switch.\n\n" +
-        "Only applies while Sonar is in classic mode.";
+        "Works in both of Sonar's mixer modes. In classic mode it follows the device the channel " +
+        "plays out of; in streamer mode it follows the Monitoring mix — the one you hear — and does " +
+        "nothing while stream monitoring is switched off.";
 
     public string RestoreBoostTooltip =>
         "On its own, a boost stays in the preset once applied — unticking the feature above, or moving " +
@@ -272,6 +359,20 @@ public sealed class MainViewModel : ObservableObject
 
             _settings.KeepWindowsDefaultDeviceId = value?.Id ?? "";
             _settings.KeepWindowsDefaultDeviceName = value?.Name ?? "";
+            Persist();
+        }
+    }
+
+    public bool ApplyRecordingApps
+    {
+        get => _settings.ApplyRecordingApps;
+        set
+        {
+            if (_settings.ApplyRecordingApps == value)
+                return;
+
+            _settings.ApplyRecordingApps = value;
+            OnPropertyChanged();
             Persist();
         }
     }
@@ -476,8 +577,14 @@ public sealed class MainViewModel : ObservableObject
             foreach (var preset in presets)
                 Presets.Add(preset);
 
+            MappingPresets.Clear();
+            MappingPresets.Add(SonarConfig.Inherit);
+            foreach (var preset in presets)
+                MappingPresets.Add(preset);
+
+            var forRows = MappingPresets.ToList();
             foreach (var row in Mappings)
-                row.SyncPreset(presets);
+                row.SyncPreset(forRows);
 
             DefaultPreset = presets.FirstOrDefault(p =>
                 string.Equals(p.Id, _settings.DefaultPresetId, StringComparison.OrdinalIgnoreCase));
@@ -505,7 +612,13 @@ public sealed class MainViewModel : ObservableObject
     private void ApplyOutputDevices(IReadOnlyList<AudioDevice> devices)
     {
         var known = devices.ToDictionary(d => d.Id, StringComparer.OrdinalIgnoreCase);
-        var repaired = RepairSavedDeviceReferences(devices, known);
+
+        // Enumerated here rather than pushed in: the watcher follows render endpoints, and rebuilding
+        // both halves in one pass keeps the repair below to a single Persist.
+        var captureDevices = _audioDevices.GetCaptureDevices();
+        var captureKnown = captureDevices.ToDictionary(d => d.Id, StringComparer.OrdinalIgnoreCase);
+
+        var repaired = RepairSavedDeviceReferences(devices, known, captureDevices, captureKnown);
 
         _loading = true;
         try
@@ -520,6 +633,14 @@ public sealed class MainViewModel : ObservableObject
             MappingOutputDevices.Add(AudioDevice.SystemDefault);
             foreach (var device in WithMissing(devices, known, MappingReferences()))
                 MappingOutputDevices.Add(device);
+
+            // "Don't change" leads, so a row whose device has gone missing falls back to doing nothing
+            // rather than to clearing an override the user may have set by hand.
+            RecordingInputDevices.Clear();
+            RecordingInputDevices.Add(AudioDevice.Unmanaged);
+            RecordingInputDevices.Add(AudioDevice.SystemDefault);
+            foreach (var device in WithMissing(captureDevices, captureKnown, RecordingInputReferences()))
+                RecordingInputDevices.Add(device);
 
             SystemDefaultDevices.Clear();
             foreach (var device in WithMissing(devices, known, [KeepWindowsDefaultReference()]))
@@ -537,6 +658,9 @@ public sealed class MainViewModel : ObservableObject
 
             foreach (var row in Mappings)
                 row.SyncOutputDevice(MappingOutputDevices);
+
+            foreach (var row in RecordingApps)
+                row.SyncInputDevice(RecordingInputDevices);
 
             foreach (var row in ChannelBoosts)
                 row.SyncDevice(ChannelBoostDevices);
@@ -573,7 +697,8 @@ public sealed class MainViewModel : ObservableObject
 
         foreach (var (id, name) in referenced)
         {
-            if (string.IsNullOrEmpty(id) || id == AudioDevice.InheritId || known.ContainsKey(id))
+            if (string.IsNullOrEmpty(id) || id == AudioDevice.InheritId || id == AudioDevice.UnmanagedId ||
+                known.ContainsKey(id))
                 continue;
 
             if (!placeholders.Add(id))
@@ -592,31 +717,43 @@ public sealed class MainViewModel : ObservableObject
     /// carrying the same name. Returns true when anything moved, in which case the caller saves.
     /// </summary>
     private bool RepairSavedDeviceReferences(
-        IReadOnlyList<AudioDevice> devices, IReadOnlyDictionary<string, AudioDevice> known)
+        IReadOnlyList<AudioDevice> devices,
+        IReadOnlyDictionary<string, AudioDevice> known,
+        IReadOnlyList<AudioDevice> captureDevices,
+        IReadOnlyDictionary<string, AudioDevice> captureKnown)
     {
-        (string Id, string Name) Repair(string id, string name)
+        // Parameterised over the enumeration because render and capture ids live in separate namespaces:
+        // repairing an input reference against the render list would match nothing, or worse, the wrong
+        // endpoint that happens to share a friendly name with a playback device.
+        (string Id, string Name) Repair(
+            string id,
+            string name,
+            IReadOnlyList<AudioDevice> pool,
+            IReadOnlyDictionary<string, AudioDevice> index)
         {
             var cleaned = AudioDevice.CleanName(name);
 
-            if (string.IsNullOrEmpty(id) || id == AudioDevice.InheritId)
+            if (string.IsNullOrEmpty(id) || id == AudioDevice.InheritId || id == AudioDevice.UnmanagedId)
                 return (id, cleaned);
 
-            if (!known.TryGetValue(id, out var live))
+            if (!index.TryGetValue(id, out var live))
             {
-                var moved = AudioDeviceService.FindUniqueId(devices, cleaned);
+                var moved = AudioDeviceService.FindUniqueId(pool, cleaned);
                 if (moved is null)
                     return (id, cleaned);
 
                 id = moved;
-                live = known[moved];
+                live = index[moved];
             }
 
             return (id, live.Name);
         }
 
+        (string Id, string Name) RepairRender(string id, string name) => Repair(id, name, devices, known);
+
         var changed = false;
 
-        var (defaultId, defaultName) = Repair(_settings.DefaultOutputDeviceId, _settings.DefaultOutputDeviceName);
+        var (defaultId, defaultName) = RepairRender(_settings.DefaultOutputDeviceId, _settings.DefaultOutputDeviceName);
         if (defaultId != _settings.DefaultOutputDeviceId || defaultName != _settings.DefaultOutputDeviceName)
         {
             _settings.DefaultOutputDeviceId = defaultId;
@@ -624,7 +761,7 @@ public sealed class MainViewModel : ObservableObject
             changed = true;
         }
 
-        var (holdId, holdName) = Repair(_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
+        var (holdId, holdName) = RepairRender(_settings.KeepWindowsDefaultDeviceId, _settings.KeepWindowsDefaultDeviceName);
         if (holdId != _settings.KeepWindowsDefaultDeviceId || holdName != _settings.KeepWindowsDefaultDeviceName)
         {
             _settings.KeepWindowsDefaultDeviceId = holdId;
@@ -634,7 +771,7 @@ public sealed class MainViewModel : ObservableObject
 
         foreach (var mapping in _settings.Mappings)
         {
-            var (id, name) = Repair(mapping.OutputDeviceId, mapping.OutputDeviceName);
+            var (id, name) = RepairRender(mapping.OutputDeviceId, mapping.OutputDeviceName);
             if (id == mapping.OutputDeviceId && name == mapping.OutputDeviceName)
                 continue;
 
@@ -643,9 +780,24 @@ public sealed class MainViewModel : ObservableObject
             changed = true;
         }
 
+        // Against the capture pool. Sonar rebuilds its virtual microphone under a new id just as it does
+        // the playback endpoints, so this is the same recovery, not a nicety.
+        foreach (var app in _settings.RecordingApps)
+        {
+            var (id, name) = Repair(
+                app.InputDeviceId, app.InputDeviceName, captureDevices, captureKnown);
+
+            if (id == app.InputDeviceId && name == app.InputDeviceName)
+                continue;
+
+            app.InputDeviceId = id;
+            app.InputDeviceName = name;
+            changed = true;
+        }
+
         foreach (var rule in _settings.ChannelBoosts)
         {
-            var (id, name) = Repair(rule.DeviceId, rule.DeviceName);
+            var (id, name) = RepairRender(rule.DeviceId, rule.DeviceName);
             if (id == rule.DeviceId && name == rule.DeviceName)
                 continue;
 
@@ -686,19 +838,31 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    private IEnumerable<(string Id, string Name)> RecordingInputReferences()
+    {
+        foreach (var app in _settings.RecordingApps)
+        {
+            if (!string.Equals(app.InputDeviceId, AudioDevice.UnmanagedId, StringComparison.Ordinal))
+                yield return (app.InputDeviceId, app.InputDeviceName);
+        }
+    }
+
     /// <summary>Updates the green "running" dots. Called on a UI timer from the window.</summary>
     public void RefreshRunningFlags()
     {
         var running = _watcher.RunningProcesses;
         foreach (var row in Mappings)
             row.IsRunning = running.Contains(GameMapping.NormalizeProcessName(row.Mapping.ProcessName));
+
+        foreach (var row in RecordingApps)
+            row.IsRunning = running.Contains(GameMapping.NormalizeProcessName(row.App.ProcessName));
     }
 
     // ---- commands --------------------------------------------------------------------------
 
     private void AddMapping()
     {
-        var dialog = new Views.AddMappingDialog(Presets)
+        var dialog = new Views.AddMappingDialog(MappingPresets)
         {
             Owner = Application.Current.MainWindow,
         };
@@ -724,7 +888,7 @@ public sealed class MainViewModel : ObservableObject
 
         _settings.Mappings.Add(mapping);
         var row = CreateRow(mapping);
-        row.SyncPreset(Presets.ToList());
+        row.SyncPreset(MappingPresets.ToList());
         row.SyncOutputDevice(MappingOutputDevices);
         Mappings.Add(row);
         OnPropertyChanged(nameof(HasMappings));
@@ -808,9 +972,91 @@ public sealed class MainViewModel : ObservableObject
         Persist();
     }
 
+    private void AddRecordingApp()
+    {
+        var dialog = new Views.AddMappingDialog(recordingApp: true)
+        {
+            Owner = Application.Current.MainWindow,
+        };
+
+        if (dialog.ShowDialog() != true || dialog.Result is null)
+            return;
+
+        var picked = dialog.Result;
+
+        var existing = RecordingApps.FirstOrDefault(r =>
+            string.Equals(r.App.ProcessName, picked.ProcessName, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            MessageBox.Show(
+                Application.Current.MainWindow!,
+                $"{picked.ProcessName}.exe is already in the recording apps list.",
+                "Already added",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var device = DefaultRecordingDevice();
+        var app = new RecordingApp
+        {
+            ProcessName = picked.ProcessName,
+            DisplayName = picked.DisplayName,
+            InputDeviceId = device.Id,
+            InputDeviceName = device.IsSentinel ? "" : device.Name,
+        };
+
+        _settings.RecordingApps.Add(app);
+        var row = CreateRecordingRow(app);
+        row.SyncInputDevice(RecordingInputDevices);
+        RecordingApps.Add(row);
+        OnPropertyChanged(nameof(HasRecordingApps));
+
+        Log($"Added {app.DisplayName} ({app.ProcessName}.exe), recording from \"{device.DisplayName}\".");
+        RefreshRunningFlags();
+        Persist();
+    }
+
+    private void RemoveRecordingApp(object? parameter)
+    {
+        if (parameter is not RecordingAppRowViewModel row)
+            return;
+
+        // The Windows override this wrote is deliberately left in place, exactly as when an app exits:
+        // it is the same thing the Volume mixer would have written, and silently clearing it would be a
+        // surprise. Removing the row only stops us managing it.
+        _settings.RecordingApps.Remove(row.App);
+        RecordingApps.Remove(row);
+        OnPropertyChanged(nameof(HasRecordingApps));
+
+        Log($"Removed {row.DisplayName} from the recording apps list.");
+        Persist();
+    }
+
+    /// <summary>
+    /// What a newly added recording app records from: Sonar's stream channel where it exists, then its
+    /// virtual microphone, then nothing at all.
+    ///
+    /// Resolved when a row is *added* and never on a sync, so it can only ever fill a blank — it must
+    /// not be able to overwrite a device the user picked. Sonar only creates the stream endpoint once
+    /// streamer mode has been set up with an output, which is why this is a search rather than a
+    /// constant: the day GG creates it, new rows pick it up with no code change.
+    /// </summary>
+    private AudioDevice DefaultRecordingDevice()
+    {
+        var real = RecordingInputDevices.Where(d => !d.IsSentinel).ToList();
+
+        return real.FirstOrDefault(d => d.Name.Contains("Stream", StringComparison.OrdinalIgnoreCase))
+            ?? real.FirstOrDefault(IsSonarVirtual)
+            ?? AudioDevice.Unmanaged;
+    }
+
     private MappingRowViewModel CreateRow(GameMapping mapping) => new(mapping, Persist);
 
     private ChannelBoostRowViewModel CreateBoostRow(ChannelBoostRule rule) => new(rule, Persist);
+
+    private RecordingAppRowViewModel CreateRecordingRow(RecordingApp app) => new(app, Persist);
 
     private void Persist()
     {
@@ -888,6 +1134,25 @@ public sealed class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ChatMixSupported));
         OnPropertyChanged(nameof(ChatMixTooltip));
+    });
+
+    /// <summary>
+    /// The coordinator has recorded, or cleared, the mode it switched Sonar away from.
+    ///
+    /// Saved and nothing more. The full <see cref="Persist"/> would call back into the coordinator's
+    /// <see cref="PresetCoordinator.UpdateSettings"/> and re-enter the apply it was raised from, and no
+    /// other service reads the field, so there is nothing to fan out.
+    /// </summary>
+    private void OnCoordinatorSettingsChanged() => Dispatch(() => SettingsStore.Save(_settings));
+
+    /// <summary>
+    /// The mode chip in the status card. Sonar can be switched between Classic and Streamer while the
+    /// app is running, so this is pushed rather than read once.
+    /// </summary>
+    private void OnSonarModeChanged(string? _) => Dispatch(() =>
+    {
+        OnPropertyChanged(nameof(SonarModeText));
+        OnPropertyChanged(nameof(SonarModeTooltip));
     });
 
     private void Log(string message)

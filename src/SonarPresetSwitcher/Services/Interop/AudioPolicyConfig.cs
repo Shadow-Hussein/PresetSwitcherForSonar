@@ -36,6 +36,12 @@ internal sealed class AudioPolicyConfig
     /// <summary>DEVINTERFACE_AUDIO_RENDER — part of the device path the API expects.</summary>
     private const string RenderInterfaceGuid = "{e6327cad-dcec-4949-ae8a-991e976a79d2}";
 
+    /// <summary>
+    /// DEVINTERFACE_AUDIO_CAPTURE. The device path is built from the interface matching the data flow,
+    /// so a capture endpoint set with the render GUID is rejected rather than mis-routed.
+    /// </summary>
+    private const string CaptureInterfaceGuid = "{2eef81be-33fa-4800-9670-1cd474972c3f}";
+
     private const int E_INVALIDARG = unchecked((int)0x80070057);
 
     private readonly IAudioPolicyConfigCurrent? _current;
@@ -132,14 +138,30 @@ internal sealed class AudioPolicyConfig
     /// audio session yet, which is normal for a game in the first seconds after launch and is why
     /// <see cref="AudioRoutingService"/> retries.
     /// </returns>
-    public bool SetProcessOutput(int processId, string? mmDeviceId)
+    public bool SetProcessOutput(int processId, string? mmDeviceId) =>
+        SetProcessEndpoint(processId, mmDeviceId, EDataFlow.Render);
+
+    /// <summary>
+    /// The same for a capture endpoint — the "App input device" half of the Volume mixer. This is how a
+    /// recording or chat app is pointed at one of Sonar's virtual microphones.
+    /// </summary>
+    /// <returns>
+    /// False on rejection, which for capture has the same benign cause as for render: the process has
+    /// not opened a capture session yet. See <see cref="AudioRoutingService"/>.
+    /// </returns>
+    public bool SetProcessInput(int processId, string? mmDeviceId) =>
+        SetProcessEndpoint(processId, mmDeviceId, EDataFlow.Capture);
+
+    private bool SetProcessEndpoint(int processId, string? mmDeviceId, EDataFlow flow)
     {
         if (!IsSupported)
             return false;
 
+        var interfaceGuid = flow == EDataFlow.Render ? RenderInterfaceGuid : CaptureInterfaceGuid;
+
         var path = string.IsNullOrWhiteSpace(mmDeviceId)
             ? ""
-            : $@"\\?\SWD#MMDEVAPI#{mmDeviceId}#{RenderInterfaceGuid}";
+            : $@"\\?\SWD#MMDEVAPI#{mmDeviceId}#{interfaceGuid}";
 
         var handle = IntPtr.Zero;
         try
@@ -149,12 +171,14 @@ internal sealed class AudioPolicyConfig
                 WindowsCreateString(path, (uint)path.Length, out handle);
 
             // The mixer writes both roles; matching that keeps our state indistinguishable from a
-            // change the user made by hand in Settings.
-            return Set(processId, ERole.Console, handle) & Set(processId, ERole.Multimedia, handle);
+            // change the user made by hand in Settings. Communications is left alone for capture too:
+            // the mixer's own input picker does not write it, and an app that asks for the
+            // communications role should keep following the user's Windows-wide choice.
+            return Set(processId, flow, ERole.Console, handle) & Set(processId, flow, ERole.Multimedia, handle);
         }
         catch (Exception ex) when (ex is COMException or MarshalDirectiveException or InvalidCastException)
         {
-            Debug.WriteLine($"SetProcessOutput({processId}) failed: {ex.Message}");
+            Debug.WriteLine($"SetProcessEndpoint({processId}, {flow}) failed: {ex.Message}");
             return false;
         }
         finally
@@ -164,14 +188,14 @@ internal sealed class AudioPolicyConfig
         }
     }
 
-    private bool Set(int processId, ERole role, IntPtr deviceId)
+    private bool Set(int processId, EDataFlow flow, ERole role, IntPtr deviceId)
     {
         var hr = _current is not null
-            ? _current.SetPersistedDefaultAudioEndpoint((uint)processId, EDataFlow.Render, role, deviceId)
-            : _legacy!.SetPersistedDefaultAudioEndpoint((uint)processId, EDataFlow.Render, role, deviceId);
+            ? _current.SetPersistedDefaultAudioEndpoint((uint)processId, flow, role, deviceId)
+            : _legacy!.SetPersistedDefaultAudioEndpoint((uint)processId, flow, role, deviceId);
 
         if (hr != 0)
-            Debug.WriteLine($"SetPersistedDefaultAudioEndpoint(pid {processId}, {role}) returned 0x{hr:X8}.");
+            Debug.WriteLine($"SetPersistedDefaultAudioEndpoint(pid {processId}, {flow}, {role}) returned 0x{hr:X8}.");
 
         return hr == 0;
     }

@@ -42,6 +42,13 @@ public sealed class PresetCoordinator : IDisposable
     /// <summary>Running mapped processes, oldest first. The last entry is the winner.</summary>
     private readonly List<string> _runningStack = [];
 
+    /// <summary>
+    /// Running processes matching an enabled <see cref="RecordingApp"/>. Kept out of
+    /// <see cref="_runningStack"/> on purpose: that stack decides which preset wins, and a recording
+    /// app names no preset — letting one join it would make OBS beat the game for the Game channel.
+    /// </summary>
+    private readonly HashSet<string> _runningRecorders = new(StringComparer.OrdinalIgnoreCase);
+
     private AppSettings _settings;
     private IReadOnlyList<SonarConfig> _presets = [];
     private string? _lastKnownSelectedId;
@@ -70,6 +77,16 @@ public sealed class PresetCoordinator : IDisposable
     /// desktop notifications.
     /// </summary>
     public event Action<PresetSwitchNotice>? PresetSwitched;
+
+    /// <summary>
+    /// Raised when this class has changed <see cref="AppSettings.ModeBeforeStreamer"/> and it needs
+    /// writing to disk.
+    ///
+    /// Handled by saving only, never by the view model's full <c>Persist()</c>: that would call back
+    /// into <see cref="UpdateSettings"/> and re-enter <see cref="ApplyTargetAsync"/>. Nothing else reads
+    /// the field, so there is nothing to fan out to.
+    /// </summary>
+    public event Action? SettingsChanged;
 
     /// <summary>Game-channel presets as of the last refresh, favourites first.</summary>
     public IReadOnlyList<SonarConfig> Presets => _presets;
@@ -112,11 +129,17 @@ public sealed class PresetCoordinator : IDisposable
         foreach (var name in names)
         {
             var key = GameMapping.NormalizeProcessName(name);
-            if (FindMapping(key) is null)
+            var isMapped = FindMapping(key) is not null;
+            var isRecorder = FindRecordingApp(key) is not null;
+
+            if (!isMapped && !isRecorder)
                 continue;
 
-            if (!_runningStack.Contains(key, StringComparer.OrdinalIgnoreCase))
+            if (isMapped && !_runningStack.Contains(key, StringComparer.OrdinalIgnoreCase))
                 _runningStack.Add(key);
+
+            if (isRecorder)
+                _runningRecorders.Add(key);
 
             matched.Add(key);
         }
@@ -133,19 +156,23 @@ public sealed class PresetCoordinator : IDisposable
         foreach (var name in names)
         {
             var key = GameMapping.NormalizeProcessName(name);
-            if (_runningStack.RemoveAll(p => string.Equals(p, key, StringComparison.OrdinalIgnoreCase)) > 0)
-            {
-                removed = true;
+            var wasMapped = _runningStack.RemoveAll(p =>
+                string.Equals(p, key, StringComparison.OrdinalIgnoreCase)) > 0;
 
-                // Let the next launch re-apply its device; the override Windows keeps is per-exe.
-                _routing.Forget(key);
-            }
+            if (!wasMapped && !_runningRecorders.Remove(key))
+                continue;
+
+            _runningRecorders.Remove(key);
+            removed = true;
+
+            // Let the next launch re-apply its devices; the override Windows keeps is per-exe.
+            _routing.Forget(key);
         }
 
         if (!removed)
             return;
 
-        _ = ApplyTargetAsync("mapped game exited");
+        _ = ApplyTargetAsync("mapped app exited");
     }
 
     private void RebuildRunningStack()
@@ -162,7 +189,34 @@ public sealed class PresetCoordinator : IDisposable
             if (running.Contains(key) && !_runningStack.Contains(key, StringComparer.OrdinalIgnoreCase))
                 _runningStack.Add(key);
         }
+
+        // Recorders are a set, not a stack: every running one is applied, and there is no winner to
+        // pick, so start order carries no meaning here.
+        _runningRecorders.Clear();
+        foreach (var app in EnabledRecordingApps())
+        {
+            var key = GameMapping.NormalizeProcessName(app.ProcessName);
+            if (running.Contains(key))
+                _runningRecorders.Add(key);
+        }
     }
+
+    /// <summary>
+    /// The recording apps the feature is allowed to act on. The master toggle is checked here rather
+    /// than at each call site, so switching it off makes every recorder invisible to this class at once
+    /// — including to <see cref="ApplyStreamerModeAsync"/>, which is what makes the toggle mean
+    /// "do nothing" rather than "do half of it".
+    /// </summary>
+    private IEnumerable<RecordingApp> EnabledRecordingApps() =>
+        _settings.ApplyRecordingApps
+            ? _settings.RecordingApps.Where(a => a.Enabled)
+            : [];
+
+    private RecordingApp? FindRecordingApp(string processKey) =>
+        EnabledRecordingApps().FirstOrDefault(a =>
+            string.Equals(
+                GameMapping.NormalizeProcessName(a.ProcessName), processKey,
+                StringComparison.OrdinalIgnoreCase));
 
     private GameMapping? FindMapping(string processKey) =>
         _settings.Mappings.FirstOrDefault(m =>
@@ -180,13 +234,21 @@ public sealed class PresetCoordinator : IDisposable
             for (var i = _runningStack.Count - 1; i >= 0 && winner is null; i--)
                 winner = FindMapping(_runningStack[i]);
 
-            var targetId = winner?.PresetId ?? _settings.DefaultPresetId;
-            var targetName = winner?.PresetName ?? _settings.DefaultPresetName;
+            // A mapping can deliberately name no preset (SonarConfig.Inherit). It still wins — its
+            // output device, recording device and streamer-mode flag all apply — but the preset is
+            // left to the global default, exactly as if nothing were running.
+            var namesPreset = winner is not null && !SonarConfig.IsInherit(winner.PresetId);
+            var targetId = namesPreset ? winner!.PresetId : _settings.DefaultPresetId;
+            var targetName = namesPreset ? winner!.PresetName : _settings.DefaultPresetName;
             ActiveMappingName = winner?.DisplayName;
 
             // Independent of the Sonar switch below — the device still has to be set when the preset
             // is already correct, and when there is no preset configured at all.
             var deviceName = ApplyAudioRouting(winner);
+
+            // Before the preset, and before the bail-out below: the mode governs how Sonar routes
+            // everything, and a mapping can ask for it without naming a preset at all.
+            await ApplyStreamerModeAsync().ConfigureAwait(false);
 
             if (string.IsNullOrWhiteSpace(targetId))
             {
@@ -220,9 +282,11 @@ public sealed class PresetCoordinator : IDisposable
             {
                 _lastKnownSelectedId = targetId;
                 CurrentPresetName = targetName;
-                Activity?.Invoke(winner is null
-                    ? $"Reverted to \"{targetName}\" ({reason})."
-                    : $"Applied \"{targetName}\" for {winner.DisplayName} ({reason}).");
+                Activity?.Invoke(namesPreset
+                    ? $"Applied \"{targetName}\" for {winner!.DisplayName} ({reason})."
+                    : winner is null
+                        ? $"Reverted to \"{targetName}\" ({reason})."
+                        : $"Applied the default \"{targetName}\" for {winner.DisplayName} ({reason}).");
 
                 PresetSwitched?.Invoke(new PresetSwitchNotice(targetName, winner?.DisplayName, deviceName));
             }
@@ -249,6 +313,75 @@ public sealed class PresetCoordinator : IDisposable
     }
 
     /// <summary>
+    /// Puts Sonar into streamer mode while any running <see cref="RecordingApp"/> asks for it, and back
+    /// to the mode it was in once the last one has exited.
+    ///
+    /// <see cref="AppSettings.ModeBeforeStreamer"/> is the whole mechanism, and it is written **only
+    /// after Sonar accepts the switch**. That is what makes the restore safe: a mode Sonar was already
+    /// in when the app launched is never recorded, so a user who lives in streamer mode is never
+    /// dropped back into classic by us. It is persisted for the same reason the boost records are — the
+    /// app being killed while OBS is running must not strand the mixer in a mode the user did not pick.
+    ///
+    /// Edge-triggered, not held: this runs when a process starts or stops, on reconnect, and on a
+    /// settings edit, so switching the mode by hand in GG between those is left alone.
+    /// </summary>
+    private async Task ApplyStreamerModeAsync()
+    {
+        var wanted = _runningRecorders.Any(key => FindRecordingApp(key) is { RequireStreamerMode: true });
+        var remembered = _settings.ModeBeforeStreamer;
+
+        // The overwhelmingly common case: nobody wants streamer mode and we have not moved it. Costs no
+        // HTTP at all, so mappings that never use this feature never pay for it.
+        if (!wanted && remembered.Length == 0)
+            return;
+
+        var mode = await _client.GetModeAsync(_cts.Token).ConfigureAwait(false);
+        if (mode is null)
+            return;
+
+        if (wanted)
+        {
+            // Already there, whether we put it there or the user did. Either way, nothing to record:
+            // if we did not move it, we have no business moving it back.
+            if (SonarMode.Is(mode, SonarMode.Streamer))
+                return;
+
+            if (!await _client.SetModeAsync(SonarMode.Streamer, _cts.Token).ConfigureAwait(false))
+            {
+                Activity?.Invoke("Could not switch Sonar to streamer mode — Sonar refused the request.");
+                return;
+            }
+
+            _settings.ModeBeforeStreamer = mode;
+            SettingsChanged?.Invoke();
+            Activity?.Invoke($"Switched Sonar to streamer mode (was {SonarMode.Describe(mode)}).");
+            return;
+        }
+
+        // Nothing wants streamer mode any more and we have a mode to put back.
+        if (SonarMode.Is(mode, remembered))
+        {
+            // Someone already put it back by hand. Drop the record rather than writing a mode change
+            // that would do nothing.
+            _settings.ModeBeforeStreamer = "";
+            SettingsChanged?.Invoke();
+            return;
+        }
+
+        if (!await _client.SetModeAsync(remembered, _cts.Token).ConfigureAwait(false))
+        {
+            // Keep the record and try again on the next apply, rather than leaving the user stranded.
+            Activity?.Invoke(
+                $"Could not switch Sonar back to {SonarMode.Describe(remembered)} mode — will retry.");
+            return;
+        }
+
+        _settings.ModeBeforeStreamer = "";
+        SettingsChanged?.Invoke();
+        Activity?.Invoke($"Switched Sonar back to {SonarMode.Describe(remembered)} mode.");
+    }
+
+    /// <summary>
     /// Routes every running mapped game to its configured output device. All of them, not just the
     /// winner — two mapped games can be running and each wants its own device.
     /// </summary>
@@ -266,6 +399,16 @@ public sealed class PresetCoordinator : IDisposable
             var result = _routing.Apply(mapping, _settings);
             if (ReferenceEquals(mapping, winner))
                 winnerDevice = result.DeviceName;
+        }
+
+        // Recording apps are a separate feature and a separate list, so every running one is applied
+        // rather than only a winner — two capture apps can want two different microphones.
+        foreach (var key in _runningRecorders)
+        {
+            if (FindRecordingApp(key) is not { } app)
+                continue;
+
+            _routing.ApplyInput(app.ProcessName, app.DisplayName, app.InputDeviceId, app.InputDeviceName);
         }
 
         return winnerDevice;

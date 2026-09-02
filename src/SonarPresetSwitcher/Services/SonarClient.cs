@@ -15,7 +15,11 @@ namespace SonarPresetSwitcher.Services;
 ///   GET  /configs/selected        the active preset per channel
 ///   PUT  /configs/{id}/select     switch the channel that preset belongs to
 ///   GET  /mode                    cheap liveness probe, and classic vs. streamer mixer mode
-///   GET  /classicRedirections     which Windows endpoint each channel plays out of
+///   PUT  /mode/{mode}             switch the mixer mode — value in the path, no body
+///   GET  /classicRedirections     which Windows endpoint each channel plays out of, in classic mode
+///   GET  /streamRedirections      the same for streamer mode: the Monitoring and Streaming mixes
+///   GET  /streamRedirections/isStreamMonitoringEnabled
+///                                 whether the Monitoring mix is on at all
 ///   GET  /audioDevices            every endpoint Sonar knows, with isVad
 ///   PUT  /configs                 save a whole config — the only way to set data.generalGain
 ///   GET  /v1/chatMix              the game/chat balance, and whether ChatMix is available at all
@@ -90,8 +94,8 @@ public sealed class SonarClient : IDisposable
     }
 
     /// <summary>
-    /// Sonar's mixer mode — <c>"classic"</c> or <c>"streamer"</c>. Returned as a bare JSON string,
-    /// not an object.
+    /// Sonar's mixer mode — <c>"classic"</c> or <c>"stream"</c> (GG's UI calls the latter
+    /// "Streamer"; the wire value is not). Returned as a bare JSON string, not an object.
     /// </summary>
     public async Task<string?> GetModeAsync(CancellationToken ct = default) =>
         await GetJsonAsync<string>("/mode", ct).ConfigureAwait(false);
@@ -105,6 +109,47 @@ public sealed class SonarClient : IDisposable
     public async Task<IReadOnlyList<SonarRedirection>?> GetClassicRedirectionsAsync(
         CancellationToken ct = default) =>
         await GetJsonAsync<List<SonarRedirection>>("/classicRedirections", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Switches Sonar's mixer mode. The value goes in the path, not a body — <c>PUT /mode/stream</c>
+    /// (a GET on the same path answers 405 with <c>Allow: PUT</c>, which is how the verb was settled).
+    ///
+    /// The value is the wire spelling, not GG's label: <c>PUT /mode/streamer</c> answers 400
+    /// <c>"Request validation error"</c>. Pass <see cref="SonarMode.Streamer"/> rather than a literal.
+    ///
+    /// This changes Sonar's whole mixer, so <see cref="PresetCoordinator"/> is the only caller, and only
+    /// when a mapping asks for it.
+    /// </summary>
+    public async Task<bool> SetModeAsync(string mode, CancellationToken ct = default)
+    {
+        using var response = await SendAsync(HttpMethod.Put, $"/mode/{Uri.EscapeDataString(mode)}", ct)
+            .ConfigureAwait(false);
+
+        return response is { IsSuccessStatusCode: true };
+    }
+
+    /// <summary>
+    /// Streamer mode's routing table: the Monitoring and Streaming mixes, each with the endpoint it
+    /// plays out of and which channels it carries.
+    ///
+    /// Answers 200 in classic mode too, with blank device ids, so it is never a way to tell the mode —
+    /// use <see cref="GetModeAsync"/> for that.
+    ///
+    /// Null means Sonar could not be reached, which an empty list would hide.
+    /// </summary>
+    public async Task<IReadOnlyList<StreamRedirection>?> GetStreamRedirectionsAsync(
+        CancellationToken ct = default) =>
+        await GetJsonAsync<List<StreamRedirection>>("/streamRedirections", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Whether the Monitoring mix is on. With it off there is no endpoint playing streamer-mode audio
+    /// back to the user at all.
+    ///
+    /// Deserialised as <c>bool?</c> so an unreachable Sonar stays distinguishable from a genuine false.
+    /// </summary>
+    public async Task<bool?> GetStreamMonitoringEnabledAsync(CancellationToken ct = default) =>
+        await GetJsonAsync<bool?>("/streamRedirections/isStreamMonitoringEnabled", ct)
+            .ConfigureAwait(false);
 
     /// <summary>
     /// Every audio endpoint Sonar knows about. Read only for <c>isVad</c>, which is the authoritative

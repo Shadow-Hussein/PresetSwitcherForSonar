@@ -47,7 +47,10 @@ Against that base URL:
 | `GET` | `/configs/selected` | the active preset per channel |
 | `PUT` | `/configs/{id}/select` | switching the preset |
 | `GET` | `/mode` | liveness probe, and classic vs. streamer mixer mode |
-| `GET` | `/classicRedirections` | which Windows endpoint each channel plays out of |
+| `PUT` | `/mode/{mode}` | switching the mixer mode — value in the path, no body |
+| `GET` | `/classicRedirections` | which Windows endpoint each channel plays out of, in classic mode |
+| `GET` | `/streamRedirections` | the same for streamer mode: the Monitoring and Streaming mixes |
+| `GET` | `/streamRedirections/isStreamMonitoringEnabled` | whether the Monitoring mix is on at all |
 | `GET` | `/audioDevices` | every endpoint Sonar knows, with `isVad` |
 | `PUT` | `/configs` | saving a whole config — the only way to set `data.generalGain` |
 | `GET` | `/v1/chatMix` | the game/chat balance, and whether ChatMix exists on this setup |
@@ -68,6 +71,52 @@ discovered endpoint, so restarting GG (which hands Sonar a new port) heals witho
   pick by hand in GG mid-game is not overridden.
 - Mapped games that were already running when the app starts are picked up on the first poll.
 - If a mapped preset is un-starred in GG, the row is flagged and switching is skipped for it.
+- A mapping can pick **"Use default (Settings)"** instead of naming a preset. It still wins while it
+  runs, so its output device still applies, but the Game preset is left wherever the default puts it —
+  which is how a game gets audio routing without a preset switch.
+
+## Recording apps
+
+A separate list on the **Additional features** tab, deliberately not part of the game mappings: a
+mapping answers "which preset and which speakers", a recording app answers "which microphone, and does
+Sonar need to be in streamer mode". Both controls are aimed at OBS, Discord, a voice recorder — apps
+that *record*. Neither changes a game's own in-game microphone.
+
+**Records from** is the input half of what Settings → Sound → Volume mixer sets per app, so a row can
+point OBS or Discord at a specific microphone — including one of Sonar's virtual ones. The picker lists
+Windows' capture endpoints, a different enumeration from the output devices on the mappings tab.
+
+A new row **defaults to Sonar's stream channel**: the first capture endpoint whose name contains
+"Stream", falling back to Sonar's virtual microphone, and to `Don't change` if Sonar is not installed
+at all. Sonar only creates the stream endpoint once streamer mode has been set up with an output, so on
+a machine that has never been in streamer mode the fallback is what you get — and rows added later pick
+the stream device up on their own. The default is resolved when a row is added and never afterwards, so
+it can only ever fill a blank, never overwrite a device you chose.
+
+It overrides the *default* microphone, so two cases fall outside it:
+
+- An app whose own audio settings name a device ignores it. Set those to "Default" first.
+- The Windows *communications* default is deliberately left alone, matching what the Volume mixer's own
+  input picker writes. That is the endpoint most in-game voice chat asks for, which is the other reason
+  this is not the setting for a game's mic.
+
+`Don't change` means exactly that: nothing about the app's input is touched, including anything you set
+by hand. `None — system default` is the one that actively clears an override. Like the output override,
+Windows stores it per executable and it outlives the process, so it also applies to the next launch —
+and an app already recording has to be restarted to move over. Removing a row stops the app being
+managed but leaves the override where it is, for the same reason.
+
+**Streamer mode** switches Sonar into streamer mode while that app is running and back to the mode it
+was in once it exits. Only a mode this app switched away from is ever put back: if you were already in
+streamer mode when the app launched, nothing is recorded and nothing is restored, so it never drags a
+full-time streamer into classic. The record is persisted, so being killed mid-stream still leaves the
+mixer where you had it — the mode is put back the next time the app starts and finds nothing asking
+for it.
+
+The whole section is off by default behind its own **Enabled** box, and with that unticked nothing is
+written at all — no device override and no mode switch. The mode switch is edge-triggered rather than
+held: changing the mode by hand in GG while the app runs is left alone until the next time a mapped app
+starts or stops.
 
 ## Detection
 
@@ -123,8 +172,18 @@ time, permanently. Two things follow:
   *pair* — output device and selected preset — which means a preset switch re-applies the boost while a
   device that has not moved is left alone. Losing and regaining Sonar re-arms it too.
 
-Off by default, and classic mode only — streamer mode redirects through different routes, so the app
-says so in the log and stands aside rather than editing a preset based on the wrong device.
+**Both mixer modes work, through different routes.** Classic mode plays each channel straight out to its
+own Windows endpoint, and a rule matches that endpoint. Streamer mode has none: every channel is folded
+into a **Monitoring** mix (what you hear) and a **Streaming** mix (what goes out), each with an output
+device of its own. Rules match the Monitoring device — a boost is a level you picked for the thing you
+are listening on — so the Streaming mix is deliberately left alone, which also stops two rules fighting
+over the single gain a preset has. With stream monitoring switched off there is nothing to follow, and
+the boost is released.
+
+The mode Sonar is in is shown next to the connection status, and a change is logged once as it happens.
+A mode the app does not recognise pauses the feature rather than guessing where the audio is going.
+
+Off by default.
 
 ### Restoring a boost
 

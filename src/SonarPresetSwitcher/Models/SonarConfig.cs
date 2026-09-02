@@ -30,5 +30,25 @@ public sealed class SonarConfig
 
     public const string GameDevice = "game";
 
+    /// <summary>
+    /// Per-mapping "don't name a preset — use the default from Settings". Sonar's own ids are GUIDs,
+    /// so this cannot collide with a real preset.
+    ///
+    /// A mapping that inherits is still a live mapping: it keeps its output device, recording device
+    /// and streamer-mode flag, and still counts as the running winner. It just leaves the Game preset
+    /// wherever the default puts it — which is how a game gets audio routing without a preset switch.
+    /// </summary>
+    public const string InheritId = "~global";
+
+    /// <summary>
+    /// The single shared instance the mapping picker holds. It must be a singleton, not a fresh
+    /// object per rebuild: <see cref="SonarConfig"/> is a class, so the ComboBox matches its
+    /// selection by reference.
+    /// </summary>
+    public static readonly SonarConfig Inherit = new() { Id = InheritId, Name = "Use default (Settings)" };
+
+    public static bool IsInherit(string? id) =>
+        string.Equals(id, InheritId, StringComparison.OrdinalIgnoreCase);
+
     public override string ToString() => Name;
 }

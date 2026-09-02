@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 read it before touching `Services/Sonar*.cs`. This file covers what the README does not: how the parts
 are wired together, and the traps that only show up at runtime.
 
+## Answering style
+
+Keep plans under 500 words and chat responses under 200. Both cover the whole ask — cut restatement,
+option surveys and recaps, not scope.
+
 ## Commands
 
 ```bash
@@ -53,6 +58,51 @@ matters:
 - `Activity` — human-readable log lines, including connects, skips and errors.
 - `PresetSwitched` — fires **only** on a successful switch. Deliberately separate from `Activity` so
   that connects and errors do not become desktop notifications.
+- `SettingsChanged` — the coordinator wrote `AppSettings.ModeBeforeStreamer` and it needs saving. The
+  VM handles it with `SettingsStore.Save` **only**, never the full `Persist()`: `Persist` calls
+  `UpdateSettings`, which re-enters `ApplyTargetAsync`, which is where the event came from. Nothing
+  else reads the field, so there is nothing to fan out.
+
+`SonarConfig.Inherit` (`~global`) is a mapping that names no preset. `FindMapping` still returns it —
+the id is non-blank, so it is a live mapping — and `namesPreset` is what falls back to the default in
+`ApplyTargetAsync`. Resolving it any earlier would lose the winner, and with it the routing, the
+recording device and the streamer-mode flag, which is the whole point of the option. It is a
+`static readonly` singleton because `SonarConfig` is a class: the ComboBox matches `SelectedItem` by
+reference, so a fresh instance per rebuild would silently deselect the row. `MainViewModel` keeps it in
+`MappingPresets` only, never `Presets` — the Settings default picker binds to the latter, and a default
+that inherits from itself is meaningless.
+
+**Recording apps are tracked in `_runningRecorders`, never in `_runningStack`.** That stack decides
+which preset wins; a `RecordingApp` names no preset, so letting one join it would let OBS beat the game
+for the Game channel. It is a `HashSet` rather than a list because there is no winner to pick — every
+running recorder gets its input applied, since two capture apps can want two different microphones.
+`EnabledRecordingApps` is where the `ApplyRecordingApps` master toggle is enforced, once, so switching
+it off hides recorders from `ApplyAudioRouting` *and* `ApplyStreamerModeAsync` together — the toggle
+means "do nothing", not "do half of it".
+
+It is also the only caller of `SonarClient.SetModeAsync`, via `ApplyStreamerModeAsync`. That belongs
+here rather than in `ChannelBoostService` (which owns *reading* `/mode`) because it is keyed on running
+processes, exactly like preset selection. Its traps:
+
+- **`PUT /mode/{mode}` takes the value in the path, and there is no body.** The verb was established
+  from `Allow: PUT` on the 405 that a `GET` on the same path returns — the route templates are not
+  literal strings in `SoundStage.Api.dll`, so grepping for them finds nothing.
+- **The streamer mode's wire value is `stream`. GG's UI says "Streamer"; the API does not.** Guessing
+  `"streamer"` breaks two things at once and neither of them loudly: `PUT /mode/streamer` answers 400
+  `{"error":"Request validation error"}` — so the switch is refused and only shows up as an activity
+  line — and `GET /mode` returns `"stream"`, which then misses every `SonarMode.Is` check and lands in
+  `ChannelBoostService`'s *unknown mode* branch, pausing the boost instead of following the Monitoring
+  mix. Both were confirmed against a live GG. `SonarMode.Streamer` is the single source; never write
+  the literal.
+- **`ModeBeforeStreamer` is written only after Sonar accepts the switch, and that is the whole safety
+  property.** A mode Sonar was *already* in is never recorded, so a user who lives in streamer mode is
+  never dropped into classic by us. It is persisted for the same reason `BoostedConfigs` is: being
+  killed mid-stream must not strand the mixer somewhere the user did not put it.
+- **Edge-triggered, not held.** `ApplyTargetAsync` runs on process start/stop, on reconnect and on a
+  settings edit — never on a timer — so switching the mode by hand in GG between those is left alone.
+- The whole thing costs no HTTP at all when no mapping wants streamer mode and nothing is outstanding,
+  which is the common case; the `GetModeAsync` call sits *after* that check for exactly that reason.
+- A failed restore **keeps** the record and retries on the next apply, rather than forgetting.
 
 **`ChannelBoostService` is a second, independent Sonar poller** and the only caller of
 `SonarClient.PutConfigAsync`. It is deliberately *not* part of `PresetCoordinator`: that class is keyed
@@ -76,8 +126,35 @@ Traps specific to it:
   dictionary stays owned by the loop thread alone.
 - `/configs/selected` is only fetched when a rule actually matches the current device — it carries the
   full EQ payload for all five channels, so pulling it every tick would be wasteful.
-- **Classic mode only.** Streamer mode redirects through different routes, so `/classicRedirections`
-  would not describe the device in use. The skip is announced once per mode transition, never per tick.
+- **Both modes are handled, and `ResolveDevicesAsync` is the whole of the difference.** It reduces either
+  routing table to one `channel -> deviceId` map — "the endpoint the user hears this on" — and the rest
+  of the tick is mode-blind. Classic reads `/classicRedirections`. Streamer reads
+  `/streamRedirections`, whose `monitoring` entry carries the analogous `deviceId` plus a per-role
+  `status` array; **only `monitoring` is matched, never `streaming`**, because a rule means "the level I
+  want on the thing I am listening on", and matching both would let two rules fight over the one gain a
+  preset has. `/streamRedirections/isStreamMonitoringEnabled` gates it: monitoring off means nothing to
+  follow, so the boost is released rather than held.
+- **`/streamRedirections` answers 200 in classic mode too**, with blank `deviceId`s — it is not a mode
+  probe, and a blank `deviceId` is also the normal state until streamer mode has been set up with an
+  output. Both cases resolve to an empty map, which releases rather than misfires.
+- **An unrecognised mode is its own case, and it returns null rather than an empty map.** Empty means
+  "connected, nothing matches" and lets `ReleaseAsync` run; null holds everything including the
+  `BoostedConfigs` records, because a routing table we cannot read is not evidence that a boost is no
+  longer wanted. Anything that is not `classic` or `stream` lands here and is logged verbatim.
+- **`/mode` is fetched before the feature-disabled early return**, not after, because the status card's
+  mode chip depends on it whether or not the boost is switched on — the same reason the ChatMix poll
+  keeps running while its feature is off. `RaiseRedirections` moved above that return too, so the "in
+  use" dots are live while rules are still being set up, which is exactly when they are useful. The tick
+  still stops right after the mode read when there are **no rules and nothing outstanding**: a user who
+  never touches the feature should not be paying a routing GET every five seconds for it.
+  `RefreshVirtualDevicesAsync` stays above that stop — it is once per connection, and the device picker
+  needs it *before* the first rule exists.
+- `_invalidated` clears `_lastRaised` as well as `_applied`. Without that, adding a rule for the device
+  already in use raises nothing (the redirections have not moved), and the new row's marker never lights.
+- **The announcement latch is a single `_announced` string, not a flag per condition.** Classic,
+  streamer, streamer-with-monitoring-off and unknown are four states that transition between each other
+  freely; one latch keyed on the state makes exactly one line per transition unavoidable. Starting up in
+  classic says nothing (the ordinary case), and `MarkUnreachable` resets it so a reconnect re-states.
 - Not every config has a `generalGain`: the `chatRender` and `chatCapture` ones carry a completely
   different key set. `ReadGeneralGain` returning null is normal, not an error.
 - **`BoostedConfigs` is what makes the restore option safe, and it is persisted for that reason.** It
@@ -153,7 +230,11 @@ Two separate undocumented APIs, and the distinction matters:
 
 - **`AudioPolicyConfig.cs`** — the *persisted per-application default endpoint*, the same thing
   Settings → Sound → Volume mixer writes. Used by `AudioRoutingService`. Never touches the system
-  default device.
+  default device. It serves **both data flows**: render for a mapping's output device, capture for its
+  recording device. The device path is built from the interface GUID matching the flow
+  (`DEVINTERFACE_AUDIO_RENDER` vs `DEVINTERFACE_AUDIO_CAPTURE`) — a capture endpoint addressed with the
+  render GUID is rejected, not mis-routed. Both flows write Console and Multimedia and leave
+  Communications alone, matching what the mixer's own pickers do.
 - **`PolicyConfig.cs`** — the *system* default endpoint, the same thing "Set as Default Device" in the
   Sound control panel writes. Used only by `DefaultDeviceGuard`, only when the user has ticked "Hold
   Windows default", and only for the Console and Multimedia roles (Communications is left to Sonar's
@@ -186,6 +267,23 @@ Constraints that are easy to rediscover the hard way:
   `AudioRoutingService` retries with backoff. Treat `E_INVALIDARG` as "not yet", not "broken".
 - The override is persistent and keyed by executable: it outlives the process and applies to the next
   launch. `AudioRoutingService.Forget` drops only the cached state, deliberately leaving the override.
+- **`AudioRoutingService` tracks `_applied` and `_retries` on the (process, direction) *pair*, not the
+  process.** The two directions are accepted independently by Windows, and a recording app opens its
+  capture session on a different schedule from its render one, so one shared retry loop would let a
+  successful output push cancel an input that had not landed yet.
+- **`AudioDevice.UnmanagedId` ("Don't change") and `SystemDefaultId` ("") are not the same thing.**
+  Empty *clears* the override; unmanaged means never call at all. `AudioRoutingService.ApplyInput`
+  returns early on it rather than pushing a clear. `WithMissing`, `Repair` and `SyncInputDevice` all
+  have to skip it, and `SyncInputDevice` falls back to it rather than to the system default — falling
+  back to "" would turn a missing device into an instruction to clear.
+- **`MainViewModel.DefaultRecordingDevice` runs on add only, never on sync**, which is what keeps it
+  from overwriting a device the user picked. It searches for a name containing "Stream" rather than
+  naming a constant: Sonar creates that endpoint only once streamer mode has been set up with an
+  output, so on a machine that has never been in streamer mode it does not exist and the search falls
+  through to the Sonar virtual mic. The day GG creates it, new rows pick it up with no code change.
+- **Render and capture ids live in separate namespaces**, so `RepairSavedDeviceReferences` is
+  parameterised over the pool. Repairing an input reference against the render list matches nothing, or
+  worse, a playback endpoint that happens to share a friendly name.
 - `DefaultDeviceGuard` polls rather than registering an `IMMNotificationClient`. Every other COM call
   here creates and releases an enumerator inside a single call; a long-lived callback would drag
   apartment and lifetime problems into a service that otherwise has none. Being wrong for a second at

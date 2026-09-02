@@ -17,12 +17,25 @@ public sealed record AudioDevice(string Id, string Name)
     /// <summary>"Leave Windows alone" — clears any per-app override.</summary>
     public const string SystemDefaultId = "";
 
+    /// <summary>
+    /// "This app's input is not ours to manage" — the recording-device picker's default, and the only
+    /// value that means *do nothing at all*.
+    ///
+    /// Distinct from <see cref="SystemDefaultId"/> on purpose: that one actively clears the override,
+    /// which would wipe a per-app input device the user had set by hand in the Volume mixer. Every
+    /// mapping written before the recording-device picker existed lands here, so the feature cannot
+    /// change anything until it is asked to.
+    /// </summary>
+    public const string UnmanagedId = "~unmanaged";
+
     /// <summary>How a device the enumeration no longer lists is marked in the pickers.</summary>
     public const string MissingSuffix = " (not connected)";
 
     public static readonly AudioDevice Inherit = new(InheritId, "Use default (Settings)");
 
     public static readonly AudioDevice SystemDefault = new(SystemDefaultId, "None — system default");
+
+    public static readonly AudioDevice Unmanaged = new(UnmanagedId, "Don't change");
 
     /// <summary>
     /// True for an entry a saved setting still points at but the enumeration no longer lists — an
@@ -36,7 +49,7 @@ public sealed record AudioDevice(string Id, string Name)
     /// </summary>
     public string DisplayName => IsMissing ? Name + MissingSuffix : Name;
 
-    public bool IsSentinel => Id is InheritId or SystemDefaultId;
+    public bool IsSentinel => Id is InheritId or SystemDefaultId or UnmanagedId;
 
     public override string ToString() => DisplayName;
 
