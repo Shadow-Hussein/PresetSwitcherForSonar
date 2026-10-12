@@ -39,10 +39,18 @@ jobs:
           }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      # Deliberately not using Properties/PublishProfiles/FolderProfile.pubxml: that profile
-      # hard-codes a local PublishDir. The runtime settings below mirror it exactly otherwise —
-      # self-contained, single-file, win-x86 (x86 so the build runs on x86 and x64 alike).
-      - name: Publish (win-x86, self-contained, single-file)
+      # Not every hosted Windows image ships Inno Setup, so install it only when it is missing.
+      - name: Set up Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      # The settings mirror Properties/PublishProfiles/FolderProfile.pubxml — self-contained,
+      # single-file, win-x86 (x86 so the build runs on x86 and x64 alike) — spelled out so the
+      # version can be stamped. BuildInstaller wraps the published folder with installer/*.iss.
+      - name: Publish and build installer (win-x86, self-contained, single-file)
         run: >
           dotnet publish src/SonarPresetSwitcher/SonarPresetSwitcher.csproj
           --configuration Release
@@ -53,24 +61,25 @@ jobs:
           -p:Version=${{ steps.version.outputs.version }}
           -p:AssemblyVersion=${{ steps.version.outputs.version }}.0
           -p:FileVersion=${{ steps.version.outputs.version }}.0
+          -p:BuildInstaller=true
+          -p:InstallerOutputDir=${{ github.workspace }}\dist
           --output publish
 
-      - name: Package
+      - name: Checksum
         shell: pwsh
         run: |
-          $name = "SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86"
-          Compress-Archive -Path publish\* -DestinationPath "$name.zip" -Force
-          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash
-          "$hash  $name.zip" | Out-File "$name.zip.sha256" -Encoding ascii
+          $name = "SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86-setup.exe"
+          $hash = (Get-FileHash "dist\$name" -Algorithm SHA256).Hash
+          "$hash  $name" | Out-File "dist\$name.sha256" -Encoding ascii
           Write-Host "SHA256: $hash"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86
+          name: SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86-setup
           path: |
-            *.zip
-            *.zip.sha256
+            dist/*-setup.exe
+            dist/*.sha256
           if-no-files-found: error
 
       # Only a real tag push cuts a GitHub Release; workflow_dispatch stops at the artifact above.
@@ -82,14 +91,18 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            *.zip
-            *.zip.sha256
+            dist/*-setup.exe
+            dist/*.sha256
           body: |
             ### Install
 
-            Download the zip, extract it anywhere, and run `SonarPresetSwitcher.exe`.
+            Download and run the `-setup.exe`. It installs for the current user without an
+            administrator prompt, and upgrades an earlier installed version in place.
             The build is self-contained — no .NET runtime install required.
+
+            The installer is not code-signed, so Windows SmartScreen may warn on first run:
+            **More info → Run anyway**. Verify the download against the accompanying `.sha256` file.
 
             Requires Windows 10/11 with SteelSeries GG running and the Sonar sub-app enabled.
 
-            Verify the download against the accompanying `.sha256` file.
+            Not affiliated with, endorsed by, or supported by SteelSeries.

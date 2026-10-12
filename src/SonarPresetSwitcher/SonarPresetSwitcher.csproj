@@ -9,6 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>SonarPresetSwitcher</RootNamespace>
     <AssemblyName>SonarPresetSwitcher</AssemblyName>
+    <Version>1.4.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -26,5 +27,33 @@
          would not exist next to the exe for the tray icon to load from. -->
     <Resource Include="Assets\app.ico" />
   </ItemGroup>
+
+  <!-- Every published layout carries the licence texts: ours, and the bundled .NET runtime's, which
+       are copied verbatim from the runtime packs so they always match the version actually shipped. -->
+  <Target Name="CopyLicenseNotices" AfterTargets="Publish">
+    <ItemGroup>
+      <_RuntimeNotice Include="%(ResolvedRuntimePack.PackageDirectory)\LICENSE*;%(ResolvedRuntimePack.PackageDirectory)\THIRD-PARTY-NOTICES*"
+                      Pack="%(ResolvedRuntimePack.NuGetPackageId)" />
+    </ItemGroup>
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\LICENSE" DestinationFiles="$(PublishDir)LICENSE.txt" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\THIRD-PARTY-NOTICES.md" DestinationFolder="$(PublishDir)" />
+    <Copy SourceFiles="@(_RuntimeNotice)" DestinationFiles="@(_RuntimeNotice->'$(PublishDir)licenses\%(Pack)\%(Filename)%(Extension)')" />
+  </Target>
+
+  <!-- Wraps the published folder in an Inno Setup installer. Opt-in via BuildInstaller=true, which the
+       publish profile and the release workflow both set, so a plain `dotnet publish` still works on a
+       machine without Inno Setup. Override InnoSetupCompiler if ISCC.exe lives somewhere else. -->
+  <Target Name="BuildInstaller" AfterTargets="CopyLicenseNotices" Condition="'$(BuildInstaller)' == 'true'">
+    <PropertyGroup>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(MSBuildProgramFiles32)\Inno Setup 6\ISCC.exe')">$(MSBuildProgramFiles32)\Inno Setup 6\ISCC.exe</InnoSetupCompiler>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(LocalAppData)\Programs\Inno Setup 6\ISCC.exe')">$(LocalAppData)\Programs\Inno Setup 6\ISCC.exe</InnoSetupCompiler>
+      <InstallerOutputDir Condition="'$(InstallerOutputDir)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\installer</InstallerOutputDir>
+      <_InstallerSourceDir>$([System.IO.Path]::GetFullPath('$(PublishDir)').TrimEnd('\'))</_InstallerSourceDir>
+    </PropertyGroup>
+    <Error Condition="'$(InnoSetupCompiler)' == ''"
+           Text="Inno Setup 6 was not found. Install it (winget install JRSoftware.InnoSetup) or pass -p:InnoSetupCompiler=path\to\ISCC.exe. The published files are in $(_InstallerSourceDir)." />
+    <Exec Command="&quot;$(InnoSetupCompiler)&quot; /Qp &quot;/DAppVersion=$(Version)&quot; &quot;/DPublishDir=$(_InstallerSourceDir)&quot; &quot;/DOutputDir=$([System.IO.Path]::GetFullPath('$(InstallerOutputDir)').TrimEnd('\'))&quot; &quot;$(MSBuildThisFileDirectory)..\..\installer\SonarPresetSwitcher.iss&quot;" />
+    <Message Importance="high" Text="Installer: $([System.IO.Path]::GetFullPath('$(InstallerOutputDir)'))\SonarPresetSwitcher-v$(Version)-win-x86-setup.exe" />
+  </Target>
 
 </Project>

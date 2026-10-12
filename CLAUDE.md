@@ -27,9 +27,20 @@ Only one instance can run: a `Local\SonarPresetSwitcher.SingleInstance` mutex ma
 exit silently with code 0. When a launch appears to "do nothing", kill strays first — and note that
 running via `dotnet SonarPresetSwitcher.dll` leaves a process named `dotnet`, not `SonarPresetSwitcher`.
 
-Release publish is single-file, self-contained, **win-x86** (`Properties/PublishProfiles/FolderProfile.pubxml`,
-which publishes to a hard-coded Desktop path). Debug builds run AnyCPU, so they are x64 — any interop
-must work under both.
+Release publish is single-file, self-contained, **win-x86** (`Properties/PublishProfiles/FolderProfile.pubxml`).
+Debug builds run AnyCPU, so they are x64 — any interop must work under both.
+
+Publishing produces an **installer**, not loose files. Two targets in the csproj hang off `Publish`:
+`CopyLicenseNotices` always runs and puts `LICENSE.txt`, `THIRD-PARTY-NOTICES.md` and the runtime
+packs' own licence files into the publish folder; `BuildInstaller` runs only with
+`-p:BuildInstaller=true` (the profile and `release.yml` both set it) and compiles
+`installer/SonarPresetSwitcher.iss` with Inno Setup 6 into `artifacts/installer`. Things the script
+depends on, which break silently if they drift:
+
+- `AppMutex` must match `App.SingleInstanceMutexName` (without the `Local\` prefix).
+- The uninstaller deletes the HKCU Run value by `StartupRegistration.ValueName`, and empties
+  `MicGainService.FileName` in Equalizer APO's config folder (`HKLM64`, same reason as `Registry64`).
+- `AppId` is the upgrade identity. Changing it makes the next version install side by side.
 
 ## Architecture
 

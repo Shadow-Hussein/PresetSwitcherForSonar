@@ -1,0 +1,9 @@
+Sonar Preset Switcher is an independent, open-source project.
+
+It is not affiliated with, endorsed by, sponsored by, or supported by SteelSeries ApS. "SteelSeries", "GG" and "Sonar" are trademarks of their respective owner and are used here only to describe what this app works with. No SteelSeries software is included in this installer; SteelSeries GG must be installed separately.
+
+The app talks to an undocumented local interface of SteelSeries GG that may change or stop working with any GG update. Some features change settings on your computer on purpose: Sonar presets and modes, the Windows default and per-app audio devices, and - only if you switch them on - an Equalizer APO gain file and audio sources in OBS. Equalizer APO and OBS Studio are separate projects under their own licences and are not included either.
+
+The software is provided "as is", without warranty of any kind. The full licence is on the previous page; the licences of the bundled .NET runtime are installed in the "licenses" folder.
+
+The app sends nothing over the internet. It only talks to SteelSeries GG and OBS on this computer.

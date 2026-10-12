@@ -15,9 +15,15 @@ game that is running is marked, and the most recently started one wins.*
 
 ## Install
 
-Grab the latest zip from [Releases](https://github.com/Shadow-Hussein/SonarPresetSwitcher/releases),
-extract it anywhere, and run `SonarPresetSwitcher.exe`. The release build is self-contained, so no .NET
-runtime install is needed. To build from source instead, see below.
+Grab the latest `-setup.exe` from
+[Releases](https://github.com/Shadow-Hussein/SonarPresetSwitcher/releases) and run it. It installs for
+the current user without an administrator prompt, and the release build is self-contained, so no .NET
+runtime install is needed. The installer is not code-signed, so SmartScreen may ask you to confirm.
+
+Uninstalling removes the app, its "Start with Windows" entry and any microphone gain it left in
+Equalizer APO. Your settings in `%APPDATA%\SonarPresetSwitcher` are kept, and a volume boost already
+written into a Sonar preset stays in that preset — untick the feature with **restore** on first if you
+want those put back. To build from source instead, see below.
 
 ## Build & run
 
@@ -29,6 +35,13 @@ The executable lands in `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/Sonar
 Pass `--minimized` to start straight to the tray (this is what the "Start with Windows" toggle registers).
 
 Requires .NET 10 Desktop Runtime and SteelSeries GG running with the Sonar sub-app enabled.
+
+To build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and publish with the
+profile; the setup exe lands in `artifacts/installer`:
+
+```bash
+dotnet publish src/SonarPresetSwitcher/SonarPresetSwitcher.csproj -p:PublishProfile=FolderProfile
+```
 
 ## How it talks to Sonar
 
@@ -350,7 +363,8 @@ before you touch it.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). The release bundles the .NET runtime; see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Not affiliated with, endorsed by, or supported by SteelSeries. "SteelSeries", "GG" and "Sonar" are
 trademarks of their respective owner.
