@@ -66,6 +66,6 @@ dotnet_naming_style.underscore_camel.required_prefix = _
 dotnet_naming_style.underscore_camel.capitalization = camel_case
 
 # P/Invoke/interop files hand-declare vtable layouts; the analyzer noise there is not actionable.
-[src/SonarPresetSwitcher/Services/Interop/*.cs]
+[src/PresetSwitcherForSonar/Services/Interop/*.cs]
 dotnet_diagnostic.CA1401.severity = none
 dotnet_diagnostic.SYSLIB1054.severity = none

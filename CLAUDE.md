@@ -14,18 +14,18 @@ option surveys and recaps, not scope.
 ## Commands
 
 ```bash
-dotnet build "SonarPresetSwitcher.sln" -c Debug
+dotnet build "PresetSwitcherForSonar.sln" -c Debug
 ```
 
-Output: `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/SonarPresetSwitcher.exe`. Pass `--minimized`
+Output: `src/PresetSwitcherForSonar/bin/Debug/net10.0-windows/PresetSwitcherForSonar.exe`. Pass `--minimized`
 to start straight to the tray (what the "Start with Windows" toggle registers).
 
 There is **no test project and no linter** — one WPF app project, zero NuGet dependencies, BCL only.
 Verification is manual: run the app against a live SteelSeries GG. Do not go looking for a test runner.
 
-Only one instance can run: a `Local\SonarPresetSwitcher.SingleInstance` mutex makes a second launch
+Only one instance can run: a `Local\PresetSwitcherForSonar.SingleInstance` mutex makes a second launch
 exit silently with code 0. When a launch appears to "do nothing", kill strays first — and note that
-running via `dotnet SonarPresetSwitcher.dll` leaves a process named `dotnet`, not `SonarPresetSwitcher`.
+running via `dotnet PresetSwitcherForSonar.dll` leaves a process named `dotnet`, not `PresetSwitcherForSonar`.
 
 Release publish is single-file, self-contained, **win-x86** (`Properties/PublishProfiles/FolderProfile.pubxml`).
 Debug builds run AnyCPU, so they are x64 — any interop must work under both.
@@ -34,12 +34,20 @@ Publishing produces an **installer**, not loose files. Two targets in the csproj
 `CopyLicenseNotices` always runs and puts `LICENSE.txt`, `THIRD-PARTY-NOTICES.md` and the runtime
 packs' own licence files into the publish folder; `BuildInstaller` runs only with
 `-p:BuildInstaller=true` (the profile and `release.yml` both set it) and compiles
-`installer/SonarPresetSwitcher.iss` with Inno Setup 6 into `artifacts/installer`. Things the script
+`installer/PresetSwitcherForSonar.iss` with Inno Setup 6 into `artifacts/installer`. Things the script
 depends on, which break silently if they drift:
 
-- `AppMutex` must match `App.SingleInstanceMutexName` (without the `Local\` prefix).
+- `AppMutex` must match `App.SingleInstanceMutexName` (without the `Local\` prefix). It also lists
+  the legacy name, below.
 - The uninstaller deletes the HKCU Run value by `StartupRegistration.ValueName`, and empties
   `MicGainService.FileName` in Equalizer APO's config folder (`HKLM64`, same reason as `Registry64`).
+- **The app was `SonarPresetSwitcher` until 1.4.0, and four places still say so on purpose.** Each is
+  a `Legacy*` constant that adopts state an older build left behind, and the installer mirrors all of
+  them: the single-instance mutex (`App`), the `%APPDATA%` folder (`SettingsStore.ResolveDirectory`
+  moves it), the HKCU Run value (`StartupRegistration.RepairIfBroken` rewrites it) and the Equalizer
+  APO file (`MicGainService.AdoptLegacyFile`). That last one is not cosmetic: the old file's include
+  stays live in `config.txt`, so skipping the adoption stacks the old preamp on the new one. Do not
+  "finish the rename" by deleting them.
 - `AppId` is the upgrade identity. Changing it makes the next version install side by side.
 
 ## Architecture
@@ -314,12 +322,12 @@ model. Every write goes through `MainViewModel.Persist()` → `SettingsStore.Sav
 To add a setting: add a `[JsonPropertyName]` property to `AppSettings`, then a VM property whose setter
 calls `Persist()`. Computed properties need `[JsonIgnore]` or they leak into settings.json.
 
-Every activity line is mirrored to `%APPDATA%\SonarPresetSwitcher\activity.log` by `ActivityFileLog`,
+Every activity line is mirrored to `%APPDATA%\PresetSwitcherForSonar\activity.log` by `ActivityFileLog`,
 called from the single `MainViewModel.Log` funnel. This is the only record of what happened at logon:
 `MainWindow.Loaded` never fires under `--minimized`, so `InitializeAsync` does not run and the in-window
 log starts empty. Read it before theorising about a startup bug.
 
-Settings live at `%APPDATA%\SonarPresetSwitcher\settings.json` (atomic write via `.tmp` + `File.Move`).
+Settings live at `%APPDATA%\PresetSwitcherForSonar\settings.json` (atomic write via `.tmp` + `File.Move`).
 Missing keys fall through to property initializers, which is the migration story — there is no explicit
 migration code.
 

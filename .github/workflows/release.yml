@@ -52,7 +52,7 @@ jobs:
       # version can be stamped. BuildInstaller wraps the published folder with installer/*.iss.
       - name: Publish and build installer (win-x86, self-contained, single-file)
         run: >
-          dotnet publish src/SonarPresetSwitcher/SonarPresetSwitcher.csproj
+          dotnet publish src/PresetSwitcherForSonar/PresetSwitcherForSonar.csproj
           --configuration Release
           --runtime win-x86
           --self-contained true
@@ -68,7 +68,7 @@ jobs:
       - name: Checksum
         shell: pwsh
         run: |
-          $name = "SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86-setup.exe"
+          $name = "PresetSwitcherForSonar-v${{ steps.version.outputs.version }}-win-x86-setup.exe"
           $hash = (Get-FileHash "dist\$name" -Algorithm SHA256).Hash
           "$hash  $name" | Out-File "dist\$name.sha256" -Encoding ascii
           Write-Host "SHA256: $hash"
@@ -76,7 +76,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: SonarPresetSwitcher-v${{ steps.version.outputs.version }}-win-x86-setup
+          name: PresetSwitcherForSonar-v${{ steps.version.outputs.version }}-win-x86-setup
           path: |
             dist/*-setup.exe
             dist/*.sha256

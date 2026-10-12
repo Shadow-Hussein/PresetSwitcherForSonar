@@ -1,12 +1,16 @@
-# Sonar Preset Switcher
+# Preset Switcher for Sonar
 
-[![Build](https://github.com/Shadow-Hussein/SonarPresetSwitcher/actions/workflows/build.yml/badge.svg)](https://github.com/Shadow-Hussein/SonarPresetSwitcher/actions/workflows/build.yml)
+[![Build](https://github.com/Shadow-Hussein/PresetSwitcherForSonar/actions/workflows/build.yml/badge.svg)](https://github.com/Shadow-Hussein/PresetSwitcherForSonar/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
 ![.NET 10](https://img.shields.io/badge/.NET-10.0--windows-512BD4)
 
 A small WPF tray app that automatically switches the **SteelSeries Sonar Game-channel preset** when a
 game launches, and restores a default preset when no mapped game is running.
+
+An independent project — not affiliated with SteelSeries. Until 1.4.0 it was called *Sonar Preset
+Switcher*. Upgrading loses nothing: the first run under the new name takes over the old settings
+folder, the "Start with Windows" entry and the Equalizer APO gain file.
 
 ![The Games tab: five games bound to Sonar presets and output devices](docs/screenshots/mapped-presets.png)
 
@@ -16,22 +20,22 @@ game that is running is marked, and the most recently started one wins.*
 ## Install
 
 Grab the latest `-setup.exe` from
-[Releases](https://github.com/Shadow-Hussein/SonarPresetSwitcher/releases) and run it. It installs for
+[Releases](https://github.com/Shadow-Hussein/PresetSwitcherForSonar/releases) and run it. It installs for
 the current user without an administrator prompt, and the release build is self-contained, so no .NET
 runtime install is needed. The installer is not code-signed, so SmartScreen may ask you to confirm.
 
 Uninstalling removes the app, its "Start with Windows" entry and any microphone gain it left in
-Equalizer APO. Your settings in `%APPDATA%\SonarPresetSwitcher` are kept, and a volume boost already
+Equalizer APO. Your settings in `%APPDATA%\PresetSwitcherForSonar` are kept, and a volume boost already
 written into a Sonar preset stays in that preset — untick the feature with **restore** on first if you
 want those put back. To build from source instead, see below.
 
 ## Build & run
 
 ```bash
-dotnet build "SonarPresetSwitcher.sln"
+dotnet build "PresetSwitcherForSonar.sln"
 ```
 
-The executable lands in `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/SonarPresetSwitcher.exe`.
+The executable lands in `src/PresetSwitcherForSonar/bin/Debug/net10.0-windows/PresetSwitcherForSonar.exe`.
 Pass `--minimized` to start straight to the tray (this is what the "Start with Windows" toggle registers).
 
 Requires .NET 10 Desktop Runtime and SteelSeries GG running with the Sonar sub-app enabled.
@@ -40,7 +44,7 @@ To build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php
 profile; the setup exe lands in `artifacts/installer`:
 
 ```bash
-dotnet publish src/SonarPresetSwitcher/SonarPresetSwitcher.csproj -p:PublishProfile=FolderProfile
+dotnet publish src/PresetSwitcherForSonar/PresetSwitcherForSonar.csproj -p:PublishProfile=FolderProfile
 ```
 
 ## How it talks to Sonar
@@ -164,7 +168,7 @@ Sonar's **Volume Boost** — the 0 to 12 dB slider above the equalizer, applied 
 stored per *preset*, not per device. Send the Game channel from a headset to speakers and the headset's
 boost comes with it, so a level that suits one output is wrong on the other.
 
-![The Volume tab, with a Game and Media boost saved for two output devices](docs/screenshots/volume-boost.png)
+![The Volume tab, with a Game and Media boost saved for an output device, the default ChatMix and a microphone gain](docs/screenshots/volume-boost.png)
 
 *A boost per device and per channel — the speakers get 4.5 dB on Game and 3 dB on Media, the headset 6 dB
 on Game and nothing on Media. "Restore to 0 dB" puts a preset back when a device stops using it.*
@@ -275,7 +279,7 @@ gain.
 
 ### What it writes
 
-The app owns one file, `SonarPresetSwitcher.txt`, in Equalizer APO's config folder. The `Device:` is
+The app owns one file, `PresetSwitcherForSonar.txt`, in Equalizer APO's config folder. The `Device:` is
 Sonar's microphone; the comment names the rule that put it there:
 
 ```
@@ -284,7 +288,7 @@ Device: {59d9ec80-3603-489d-988e-5634f65be32e}
 Preamp: 10 dB
 ```
 
-and appends two lines to `config.txt` — `Device: all`, then `Include: SonarPresetSwitcher.txt`. The
+and appends two lines to `config.txt` — `Device: all`, then `Include: PresetSwitcherForSonar.txt`. The
 first is required: Equalizer APO ignores an include that sits under another device's selector. Nothing
 else in that file is touched, and the lines are put back if another tool regenerates it.
 
@@ -340,7 +344,7 @@ Off by default.
 ![The Settings tab: hold Windows default, notifications, startup and the poll interval](docs/screenshots/settings.png)
 
 Everything on this tab is saved as it is changed, to
-`%APPDATA%\SonarPresetSwitcher\settings.json`, written atomically. Holds the mappings, the default
+`%APPDATA%\PresetSwitcherForSonar\settings.json`, written atomically. Holds the mappings, the default
 preset, the held default device, the per-device volume boosts, tray/autostart toggles, and the poll
 interval.
 

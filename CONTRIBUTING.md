@@ -8,10 +8,10 @@ You need the **.NET 10 SDK** and, for anything beyond a compile check, **SteelSe
 with the Sonar sub-app enabled.
 
 ```bash
-dotnet build "SonarPresetSwitcher.sln" -c Debug
+dotnet build "PresetSwitcherForSonar.sln" -c Debug
 ```
 
-The executable lands in `src/SonarPresetSwitcher/bin/Debug/net10.0-windows/SonarPresetSwitcher.exe`.
+The executable lands in `src/PresetSwitcherForSonar/bin/Debug/net10.0-windows/PresetSwitcherForSonar.exe`.
 Pass `--minimized` to start straight to the tray.
 
 There are **no NuGet dependencies** (BCL only) and please keep it that way unless there is a strong
@@ -25,7 +25,7 @@ prove very little here, because the app is written to degrade rather than crash 
 Before opening a PR, run the app against a live GG and confirm the parts you touched actually work.
 The PR template lists what to check; `CLAUDE.md` explains why each item is on the list.
 
-A single instance is enforced by a `Local\SonarPresetSwitcher.SingleInstance` mutex — a second launch
+A single instance is enforced by a `Local\PresetSwitcherForSonar.SingleInstance` mutex — a second launch
 exits silently with code 0. If a launch appears to do nothing, kill stray processes first.
 
 ## Things that will bite you

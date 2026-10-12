@@ -1,4 +1,4 @@
-Sonar Preset Switcher is an independent, open-source project.
+Preset Switcher for Sonar is an independent, open-source project.
 
 It is not affiliated with, endorsed by, sponsored by, or supported by SteelSeries ApS. "SteelSeries", "GG" and "Sonar" are trademarks of their respective owner and are used here only to describe what this app works with. No SteelSeries software is included in this installer; SteelSeries GG must be installed separately.
 

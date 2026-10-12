@@ -13,7 +13,7 @@ updates:
 
   # Inert until a PackageReference is added — then it starts working with no further setup.
   - package-ecosystem: nuget
-    directory: /src/SonarPresetSwitcher
+    directory: /src/PresetSwitcherForSonar
     schedule:
       interval: monthly
     commit-message:

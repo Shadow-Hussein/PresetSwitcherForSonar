@@ -11,12 +11,12 @@
 There is no test project — verification is manual, against a live SteelSeries GG.
 Tick what you actually did:
 
-- [ ] `dotnet build "SonarPresetSwitcher.sln" -c Debug` succeeds with no new warnings
+- [ ] `dotnet build "PresetSwitcherForSonar.sln" -c Debug` succeeds with no new warnings
 - [ ] Ran the app against a running GG with the Sonar sub-app enabled
 - [ ] A real preset switch fired and produced a toast
 - [ ] Preset ordering is still favourites-first, then alphabetical
 - [ ] App still degrades gracefully (no crash) with GG closed
-- [ ] Settings still round-trip through `%APPDATA%\SonarPresetSwitcher\settings.json`
+- [ ] Settings still round-trip through `%APPDATA%\PresetSwitcherForSonar\settings.json`
 
 If this touches **per-app audio routing** (`AudioPolicyConfig`, `AudioRoutingService`):
 

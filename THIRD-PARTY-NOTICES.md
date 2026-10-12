@@ -1,6 +1,6 @@
 # Third-party notices
 
-Sonar Preset Switcher's own source has no third-party dependencies — no NuGet packages, base class
+The app's own source has no third-party dependencies — no NuGet packages, base class
 library only. The notices below cover what a **released build** ships or builds with.
 
 ## Bundled in the release
