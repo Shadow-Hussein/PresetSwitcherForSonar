@@ -42,7 +42,9 @@ ProcessWatcher ────────────────┼-> PresetCoord
       └───────────────> DefaultDeviceGuard ────────────┤
 AudioDeviceService ─────> both audio services          │
 SonarClient ────────────> ChannelBoostService ─────────┤
-SonarClient ────────────> ChatMixService ──────────────┘
+SonarClient ────────────> ChatMixService ──────────────┤
+SonarClient ────────────> MicGainService ──────────────┤
+SonarClient + ProcessWatcher ─> ObsAudioService ───────┘
 ```
 
 `ProcessWatcher` feeds `DefaultDeviceGuard` too: it reports *every* process name, not just mapped ones
@@ -202,6 +204,95 @@ on running processes) nor of `ChannelBoostService` (keyed on Sonar's redirection
 - The poll runs even with the feature switched off, so the UI can grey the control out on a machine
   without ChatMix hardware before the user ever ticks the box.
 
+**`MicGainService` is a fourth independent poller**, and the only thing in the app that writes outside
+Sonar and Windows: it writes an Equalizer APO `Preamp`. The model took four rounds with the user to
+settle, so read this before "simplifying" it:
+
+- **Rules are keyed on the physical mic; the gain is always written for Sonar's virtual mic.** A row
+  means "this much while Sonar is reading from that microphone". The picker therefore lists physical
+  capture devices only (`!IsSonarVirtual`, like the boost picker), and the `Device:` line is always
+  `SonarOutputId`. The two were conflated twice — once as "pick any device and write there", once as
+  "Sonar's mic only" — and both were wrong: the first asked the user to install Equalizer APO on a
+  headset mic where it can never work, the second lost per-microphone amounts.
+- **Why never the physical mic: Sonar reads it RAW, which bypasses every APO.** Measured: a 15 dB
+  preamp there lifted a default-mode stream by 15 dB (a Communications-category one too) while GG's
+  mic meter did not move. Nothing in Equalizer APO can change that. On "SteelSeries Sonar -
+  Microphone" the gain lands after Sonar's processing, and the user confirmed it by ear.
+- **Sonar cannot do this itself, so do not go looking again.** The `chatCapture` config has no gain
+  field, and `RedirectionEngine.ValidateLinearGain` in `SoundStage.Services.dll` rejects any volume
+  outside 0–1. `Sonar.APOAPI.dll` exports a `Set_CaptureVolumeSupportDB`, but nothing calls it and no
+  route reaches it. The user ruled out the Volume Stabilizer and the mic EQ explicitly.
+- **The input is `mic` in `/classicRedirections`; the output is the `chatCapture`-role virtual capture
+  endpoint in `/audioDevices`.** Not routed through `ChannelBoostService`: that one reduces
+  redirections to Game and Media, follows the Monitoring mix in streamer mode, and stops early with no
+  boost rules. The output id is re-read every tick because GG re-ids its endpoints on a driver rebuild.
+- **`SonarInputId` null is *unknown*, "" is *known, none*.** Unknown holds whatever is on disk; a
+  routing table we could not read is not evidence the gain is unwanted — the same reasoning as the
+  boost service's unknown-mode case. Only a reachable Sonar on a mic with no rule removes the gain.
+- **No rules means no HTTP.** The loop asks Sonar nothing until a rule exists. `RefreshSonarAsync` is
+  the one off-schedule read, called from the view model's refresh so a first row can start on the mic
+  Sonar is using.
+- **The loop's first act is a `Flush`, before any Sonar call.** That is what takes a gain back out when
+  the feature was switched off while the app was closed, and what restores the include.
+- The rule list belongs to the UI thread, so `UpdateSettings` takes an immutable `Snapshot` there and
+  the loop only ever reads that.
+- **The registry is read through `RegistryView.Registry64`.** The release build is win-x86, and the
+  default view redirects to WOW6432Node, where Equalizer APO writes nothing.
+- **`config.txt` is append-only**, apart from repairing our own line. Other tools regenerate it
+  wholesale (Sonalizer did, on the author's machine). Re-checking on every flush restores the lines.
+- **The include must be the pair `Device: all` + `Include:`, never a bare include.** Equalizer APO
+  skips every command — `Include` among them — while the selector in force does not match the
+  endpoint, and `config.txt` usually ends on some other device's selector. A bare include shipped
+  first: the file was correct and never opened. `EnsureIncluded` repairs one in place, via Latin-1 so
+  every other byte round-trips.
+- **"Installed" is not "working".** With Windows' *Audio enhancements* Off for an endpoint
+  (`PKEY_AudioEndpoint_Disable_SysFx`, value `{1da5d803-…},5` = 1 under its `FxProperties`), no APO is
+  loaded at all. `ReadinessOf` reports it; it is read, never written — that setting is the user's.
+- **Setup is a guide, not an installer, and it is only ever about Sonar's microphone.** Putting
+  Equalizer APO on an endpoint rewrites protected `MMDevices` keys under HKLM and needs a reboot; its
+  Device Selector has no command line for it. `MicGainSetupStep` is the first unmet step, with a
+  button that shell-launches the right place (download page, `DeviceSelector.exe`,
+  `ms-settings:sound`), so the app never runs elevated. Re-evaluated from the window's 2 s timer,
+  because every step is finished in some other program.
+- The selector is the endpoint GUID — the last `{…}` of the MMDevice id, also the key name under
+  `HKLM\SOFTWARE\EqualizerAPO\Child APOs`. It goes through `Guid.TryParseExact`, so nothing but a GUID
+  can reach the config.
+- **A never-used feature writes nothing.** No live rule and no existing file means no file and no
+  include; the empty file is only written to take a gain back out.
+- **This app's `%APPDATA%` is not the one a Claude Code session sees.** The desktop app is packaged,
+  so tools launched from it read a virtualised `AppData\Roaming`: a stale `settings.json` and
+  `activity.log`. An instance started from such a session loads no rules and would empty the gain
+  file. Let the user launch the app; do not start it to "verify".
+
+**`ObsAudioService` is the one service that is not a poller**, and the only thing that talks to OBS.
+It creates one audio source per Sonar channel over obs-websocket v5 and keeps them pointed at Sonar's
+endpoints. Its traps:
+
+- **Two operations, and the asymmetry is the design.** `SetupAsync` (the button) creates, adds to the
+  current scene and assigns tracks. The repair (once per OBS start, behind the `ApplyObsAudio` toggle)
+  only re-points sources that already exist. Letting the repair create would resurrect a source the
+  user deleted at every OBS launch; letting it set tracks would revert their layout.
+- **Channels are matched on `role` *and* `dataFlow`.** `/audioDevices` lists a *render* endpoint in
+  the `chatCapture` role as well as the microphone, so role alone picks the wrong one for "Sonar Mic".
+  Roles confirmed live: `game`, `chatRender`, `media`, `chatCapture`. `aux` is inferred — the endpoint
+  did not exist on the author's machine — and an absent channel is skipped, not an error.
+- **The port and password are read from OBS's own `plugin_config\obs-websocket\config.json`**, on
+  every connect. Do not add a password box: that would put a second copy in our settings.json.
+- **Edge-triggered on `ProcessWatcher.Started`, never a timer.** `Start` must run before
+  `_watcher.Start()` so the watcher's first tick — which reports everything already running — reaches
+  it. OBS's socket opens seconds after its process and answers 207 NotReady until the scene collection
+  has loaded, hence `RepairBackoff`; `IsNotReadyYet` is the list of failures worth another attempt.
+- **One connection per operation**, with `eventSubscriptions: 0`. That zero is what lets
+  `RequestAsync` treat every later message as a response.
+- **obs-websocket cannot create OBS's global audio devices**, so the sources are scene items. An input
+  is only heard in scenes that contain it; `EnsureInSceneAsync` is why clicking the button in a second
+  scene works.
+- `SetInputSettings` is sent with `overlay: true` so only `device_id` changes.
+- A same-named input of a different kind is left alone and reported, never re-pointed.
+- The OBS profile (`Output/Mode`, `AdvOut/RecTracks`) is read for a hint and never written.
+- Unverified against a live OBS at the time of writing — it was not running. The request names and
+  fields are from the obs-websocket 5.x protocol document.
+
 The `Slider` in `Views/Theme.xaml` is declared low in the dictionary on purpose: it reuses
 `ScrollPageButton` for the click-in-the-track areas, and `StaticResource` only sees keys above it. Its
 0 marker is a drawn `Rectangle`, not a `TickBar` — `TickFrequency` is 0.01, which would paint two
@@ -309,6 +400,14 @@ the top of `Views/TrayIconHost.cs`.
 Neither window defines its own brushes or styles. Buttons and combo boxes carry full `ControlTemplate`s
 because stock WPF chrome ignores `Background`/`BorderBrush` triggers. A missing key here surfaces as a
 `XamlParseException` at window construction, not at build time.
+
+**Tab pages scroll in one place: the `ScrollViewer` inside the `TabControl` template.** A page is
+therefore measured with unlimited height, so it must be a plain top-to-bottom `StackPanel` — a star row
+collapses to its content, and a nested `ScrollViewer` never engages and only swallows the wheel.
+`MainWindow.OnTabsPreviewMouseWheel` hands the wheel to the page when it is over a closed `ComboBox`,
+which would otherwise step its selection — a preset or a device — while the user is just scrolling.
+The four tabs are Games (mappings and their defaults), Volume (boost, ChatMix, mic gain), Recording
+(recording apps, OBS) and Settings (Windows default device, app options).
 
 Sonar ships ~330 Game presets, so preset combo boxes need both `VirtualizingStackPanel` (set in the
 `ComboBox` template) and `TextSearch.TextPath="Name"` — the latter because `ItemTemplate` replaced

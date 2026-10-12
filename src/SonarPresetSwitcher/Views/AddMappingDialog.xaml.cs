@@ -15,18 +15,20 @@ public partial class AddMappingDialog : Window
 {
     private readonly ObservableCollection<ProcessEntry> _visible = [];
     private readonly bool _recordingApp;
+    private readonly List<SonarConfig> _presets = [];
     private List<ProcessEntry> _all = [];
 
     public AddMappingDialog(IEnumerable<SonarConfig> presets)
     {
         InitializeComponent();
 
-        PresetBox.ItemsSource = presets.ToList();
+        _presets = presets.ToList();
+        PresetBox.ItemsSource = _presets;
 
-        // Land on a real preset, not the "use the default" sentinel: naming one is what this dialog is
-        // for, and inheriting is the deliberate choice.
-        PresetBox.SelectedItem = presets.FirstOrDefault(p => !SonarConfig.IsInherit(p.Id))
-            ?? presets.FirstOrDefault();
+        // Land on "use the default from Settings": a new mapping then changes nothing about the sound
+        // until a preset is picked on purpose, and the search box is the quick way to pick one.
+        PresetBox.SelectedItem = _presets.FirstOrDefault(p => SonarConfig.IsInherit(p.Id))
+            ?? _presets.FirstOrDefault();
 
         ProcessList.ItemsSource = _visible;
         LoadProcesses();
@@ -183,6 +185,37 @@ public partial class AddMappingDialog : Window
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Narrows the preset list to names containing the search text. Type-to-jump on the combo box only
+    /// matches the start of a name, which is little help across ~330 presets named after games.
+    ///
+    /// The "use the default" entry is never filtered out, so clearing a choice stays one click away.
+    /// </summary>
+    private void OnPresetSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        var search = PresetSearchBox.Text.Trim();
+        var selected = PresetBox.SelectedItem as SonarConfig;
+
+        var matches = _presets
+            .Where(p => SonarConfig.IsInherit(p.Id) ||
+                        p.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase))
+            .ToList();
+
+        PresetBox.ItemsSource = matches;
+
+        // While searching, the first real match is what the user is asking for — unless they have
+        // already picked one that still matches.
+        var firstMatch = search.Length == 0
+            ? null
+            : matches.FirstOrDefault(p => !SonarConfig.IsInherit(p.Id));
+
+        var keep = selected is not null && matches.Contains(selected) &&
+                   (firstMatch is null || !SonarConfig.IsInherit(selected.Id));
+
+        PresetBox.SelectedItem = keep ? selected : firstMatch ?? matches.FirstOrDefault();
+        UpdateAddButton();
     }
 
     private void OnFormChanged(object sender, RoutedEventArgs e) => UpdateAddButton();

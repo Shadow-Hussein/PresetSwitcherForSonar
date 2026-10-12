@@ -8,7 +8,7 @@
 A small WPF tray app that automatically switches the **SteelSeries Sonar Game-channel preset** when a
 game launches, and restores a default preset when no mapped game is running.
 
-![The Mapped presets tab: five games bound to Sonar presets and output devices](docs/screenshots/mapped-presets.png)
+![The Games tab: five games bound to Sonar presets and output devices](docs/screenshots/mapped-presets.png)
 
 *Each row binds a process to a Game preset and, optionally, to a Windows output device. The row for a
 game that is running is marked, and the most recently started one wins.*
@@ -77,14 +77,14 @@ discovered endpoint, so restarting GG (which hands Sonar a new port) heals witho
 
 ## Recording apps
 
-A separate list on the **Additional features** tab, deliberately not part of the game mappings: a
+A separate list on the **Recording** tab, deliberately not part of the game mappings: a
 mapping answers "which preset and which speakers", a recording app answers "which microphone, and does
 Sonar need to be in streamer mode". Both controls are aimed at OBS, Discord, a voice recorder — apps
 that *record*. Neither changes a game's own in-game microphone.
 
 **Records from** is the input half of what Settings → Sound → Volume mixer sets per app, so a row can
 point OBS or Discord at a specific microphone — including one of Sonar's virtual ones. The picker lists
-Windows' capture endpoints, a different enumeration from the output devices on the mappings tab.
+Windows' capture endpoints, a different enumeration from the output devices on the Games tab.
 
 A new row **defaults to Sonar's stream channel**: the first capture endpoint whose name contains
 "Stream", falling back to Sonar's virtual microphone, and to `Don't change` if Sonar is not installed
@@ -151,7 +151,7 @@ Sonar's **Volume Boost** — the 0 to 12 dB slider above the equalizer, applied 
 stored per *preset*, not per device. Send the Game channel from a headset to speakers and the headset's
 boost comes with it, so a level that suits one output is wrong on the other.
 
-![The Additional features tab, with a Game and Media boost saved for two output devices](docs/screenshots/volume-boost.png)
+![The Volume tab, with a Game and Media boost saved for two output devices](docs/screenshots/volume-boost.png)
 
 *A boost per device and per channel — the speakers get 4.5 dB on Game and 3 dB on Media, the headset 6 dB
 on Game and nothing on Media. "Restore to 0 dB" puts a preset back when a device stops using it.*
@@ -219,9 +219,112 @@ next reconnect.
 Off by default. ChatMix only exists for sources with separate game and chat audio inputs; where Sonar
 reports it as unavailable the control greys out and says which state it reported.
 
+## Microphone gain
+
+For a microphone that is still too quiet at 100%. Each row saves an extra gain, 0–30 dB in 0.5 steps,
+for one physical microphone, and the gain is applied to **Sonar's microphone while Sonar is using
+that one**. Switch microphones in Sonar and the other row's gain takes over — or none, if it has no
+row. The dot is green on the row in use.
+
+**This is not a Sonar setting, because Sonar has none.** A mic preset carries the Volume Stabilizer (a
+compressor), the noise stages and the EQ — no gain — and Sonar's mic volume is validated to 0–1, so
+there is nothing above 100% to ask for. The gain is an
+[Equalizer APO](https://sourceforge.net/projects/equalizerapo/) `Preamp` instead.
+
+It is always written for "SteelSeries Sonar - Microphone", never for your own microphone, and that
+was measured rather than assumed: **Sonar reads the physical microphone in raw mode, which skips
+Equalizer APO entirely.** A 15 dB preamp on the headset mic lifted an ordinary recording stream by
+15 dB while Sonar's meter did not move. On Sonar's microphone the gain comes after Sonar's own
+processing, so the noise cancelling runs first and every app recording through Sonar hears the
+result. Sonar's meter in GG does not show it, for the same reason.
+
+So the rows pick *when*, and Sonar's microphone is always *where*. `MicGainService` polls the `mic`
+entry of `/classicRedirections`, and rewrites its file only when the microphone or a rule changed.
+While Sonar is unreachable the gain is left as it was, rather than dropped.
+
+### Setup
+
+Equalizer APO has to be installed and switched on for **Sonar's microphone only** — your own
+microphones need nothing. The app cannot do that silently: it means rewriting protected audio
+settings and rebooting, which is the job of Equalizer APO's own Device Selector. So the card shows a
+guide instead — one outstanding step at a time, each with a button that opens the right place,
+disappearing when there is nothing left to do.
+
+1. **Install Equalizer APO.** The button opens the download page.
+2. **Select the device.** The button opens the Device Selector: on the *Capture devices* tab tick
+   "SteelSeries Sonar - Microphone", press OK, and reboot when it asks.
+3. **Turn audio enhancements on.** Only if Windows has them off for that device, which bypasses every
+   effect. The button opens Sound settings: open the device under *Input* and set *Audio
+   enhancements* to *Device Default Effects*.
+
+Then tick **Enabled**. With no rows yet, one is created for the microphone Sonar is using; type the
+gain.
+
+### What it writes
+
+The app owns one file, `SonarPresetSwitcher.txt`, in Equalizer APO's config folder. The `Device:` is
+Sonar's microphone; the comment names the rule that put it there:
+
+```
+# +10 dB while Sonar's microphone input is Headset Microphone (OMEN Blast Headset)
+Device: {59d9ec80-3603-489d-988e-5634f65be32e}
+Preamp: 10 dB
+```
+
+and appends two lines to `config.txt` — `Device: all`, then `Include: SonarPresetSwitcher.txt`. The
+first is required: Equalizer APO ignores an include that sits under another device's selector. Nothing
+else in that file is touched, and the lines are put back if another tool regenerates it.
+
+Things to know:
+
+- It is digital gain: too much clips. Start around 6–10 dB.
+- An app that records from your microphone directly, bypassing Sonar, does not get the gain.
+- Unticking the feature, disabling a row or removing it takes the gain back out.
+
+Off by default, and greyed out when Equalizer APO is not installed.
+
+## OBS audio sources
+
+OBS records Sonar as one blob unless each virtual device is added as its own source on its own track.
+**Set up OBS…** on the *Recording* tab does that, in the scene OBS is currently showing:
+
+| Source | OBS kind | Sonar `role` | Tracks |
+| --- | --- | --- | --- |
+| Sonar Game | Audio Output Capture | `game` | 1 + 2 |
+| Sonar Chat | Audio Output Capture | `chatRender` | 1 + 3 |
+| Sonar Media | Audio Output Capture | `media` | 1 + 4 |
+| Sonar Aux | Audio Output Capture | `aux` | 1 + 5 |
+| Sonar Mic | Audio Input Capture | `chatCapture` | 1 + 6 |
+
+Track 1 is the full mix — what a stream carries — and the others hold one channel each for the edit.
+Sources that already exist under those names are reused, not duplicated; a channel Sonar has no device
+for is skipped. Clicking the button again in another scene adds the same sources there.
+
+**Keep in sync** is the second half. GG gives its virtual endpoints new ids whenever it rebuilds its
+driver, and an OBS source holds the id rather than the name — so the source stays in the mixer and
+records silence. With the box ticked, each time OBS starts the app compares every `Sonar …` source's
+device against `/audioDevices` and re-points the stale ones. It only re-points: it never creates a
+source and never changes tracks, so anything deleted or re-arranged by hand stays that way.
+
+It talks to OBS over [obs-websocket](https://github.com/obsproject/obs-websocket) v5, which ships with
+OBS: **Tools → WebSocket Server Settings → Enable WebSocket server**. The port and password are read
+from OBS's own `%APPDATA%\obs-studio\plugin_config\obs-websocket\config.json`, so there is nothing to
+enter and no second copy of the password in this app's settings.
+
+Things to know:
+
+- Recording the tracks separately also needs them ticked in OBS under Settings → Output → Recording
+  (Advanced output mode). The app reads that setting and says so in the activity log; it does not
+  change it.
+- OBS's own global *Desktop Audio* captures the Windows default device — usually Sonar Gaming — and
+  would double that channel. The setup reports it when it is live; mute or disable it in OBS.
+- Nothing is ever deleted or renamed in OBS.
+
+Off by default.
+
 ## Settings
 
-![The Settings tab: default preset, default output device, hold Windows default, and the poll interval](docs/screenshots/settings.png)
+![The Settings tab: hold Windows default, notifications, startup and the poll interval](docs/screenshots/settings.png)
 
 Everything on this tab is saved as it is changed, to
 `%APPDATA%\SonarPresetSwitcher\settings.json`, written atomically. Holds the mappings, the default

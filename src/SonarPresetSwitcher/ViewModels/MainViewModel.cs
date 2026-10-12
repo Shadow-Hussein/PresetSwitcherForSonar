@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using SonarPresetSwitcher.Models;
@@ -19,6 +21,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly DefaultDeviceGuard _defaultGuard;
     private readonly ChannelBoostService _channelBoosts;
     private readonly ChatMixService _chatMix;
+    private readonly MicGainService _micGain;
+    private readonly ObsAudioService _obsAudio;
     private readonly AppSettings _settings;
 
     private bool _connected;
@@ -40,6 +44,8 @@ public sealed class MainViewModel : ObservableObject
         DefaultDeviceGuard defaultGuard,
         ChannelBoostService channelBoosts,
         ChatMixService chatMix,
+        MicGainService micGain,
+        ObsAudioService obsAudio,
         AppSettings settings)
     {
         _client = client;
@@ -51,6 +57,8 @@ public sealed class MainViewModel : ObservableObject
         _defaultGuard = defaultGuard;
         _channelBoosts = channelBoosts;
         _chatMix = chatMix;
+        _micGain = micGain;
+        _obsAudio = obsAudio;
         _settings = settings;
 
         foreach (var mapping in settings.Mappings)
@@ -62,12 +70,23 @@ public sealed class MainViewModel : ObservableObject
         foreach (var app in settings.RecordingApps)
             RecordingApps.Add(CreateRecordingRow(app));
 
+        // A rule names the physical microphone Sonar is reading; one left pointing at a Sonar endpoint
+        // by an earlier build can never match. By name, because nothing is enumerated yet.
+        settings.MicGains.RemoveAll(r => AudioDevice.LooksLikeSonarVirtual(r.DeviceName));
+
+        foreach (var rule in settings.MicGains)
+            MicGains.Add(CreateMicGainRow(rule));
+
         AddMappingCommand = new RelayCommand(AddMapping);
         RemoveMappingCommand = new RelayCommand(RemoveMapping);
         AddChannelBoostCommand = new RelayCommand(AddChannelBoost);
         RemoveChannelBoostCommand = new RelayCommand(RemoveChannelBoost);
         AddRecordingAppCommand = new RelayCommand(AddRecordingApp);
         RemoveRecordingAppCommand = new RelayCommand(RemoveRecordingApp);
+        AddMicGainCommand = new RelayCommand(AddMicGain);
+        RemoveMicGainCommand = new RelayCommand(RemoveMicGain);
+        MicGainSetupCommand = new RelayCommand(RunMicGainSetupStep);
+        SetupObsCommand = new RelayCommand(async () => await _obsAudio.SetupAsync());
         RefreshCommand = new RelayCommand(async () => await RefreshAsync());
 
         _coordinator.StateChanged += OnCoordinatorStateChanged;
@@ -83,6 +102,9 @@ public sealed class MainViewModel : ObservableObject
         _channelBoosts.SettingsChanged += OnBoostSettingsChanged;
         _chatMix.Activity += OnActivity;
         _chatMix.AvailabilityChanged += OnChatMixAvailabilityChanged;
+        _micGain.Activity += OnActivity;
+        _micGain.SonarMicChanged += OnSonarMicChanged;
+        _obsAudio.Activity += OnActivity;
         _deviceWatcher.DevicesChanged += OnAudioDevicesChanged;
     }
 
@@ -124,6 +146,12 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Recording and streaming apps, with their microphone and streamer-mode choice.</summary>
     public ObservableCollection<RecordingAppRowViewModel> RecordingApps { get; } = [];
 
+    /// <summary>Per-microphone gain rules, written to Equalizer APO.</summary>
+    public ObservableCollection<MicGainRowViewModel> MicGains { get; } = [];
+
+    /// <summary>Physical microphones only — the gain always lands on Sonar's own, so that is not a choice.</summary>
+    public ObservableCollection<AudioDevice> MicGainDevices { get; } = [];
+
     public ObservableCollection<string> ActivityLog { get; } = [];
 
     public RelayCommand AddMappingCommand { get; }
@@ -137,6 +165,16 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand AddRecordingAppCommand { get; }
 
     public RelayCommand RemoveRecordingAppCommand { get; }
+
+    public RelayCommand AddMicGainCommand { get; }
+
+    public RelayCommand RemoveMicGainCommand { get; }
+
+    /// <summary>Does whatever the setup guide's current step needs — see <see cref="MicGainSetupStep"/>.</summary>
+    public RelayCommand MicGainSetupCommand { get; }
+
+    /// <summary>Creates the Sonar audio sources in OBS's current scene — see <see cref="ObsAudioService"/>.</summary>
+    public RelayCommand SetupObsCommand { get; }
 
     public RelayCommand RefreshCommand { get; }
 
@@ -224,6 +262,8 @@ public sealed class MainViewModel : ObservableObject
 
     public bool HasRecordingApps => RecordingApps.Count > 0;
 
+    public bool HasMicGains => MicGains.Count > 0;
+
     /// <summary>
     /// Sonar's mixer mode for the status card, or "" while it is unknown — the chip hides itself then,
     /// rather than claiming a mode the app has not actually read.
@@ -283,6 +323,81 @@ public sealed class MainViewModel : ObservableObject
             ? "Waiting for Sonar — ChatMix availability is not known yet."
             : $"ChatMix is not available on this setup (Sonar reports \"{_chatMix.LastState}\"). " +
               "It needs a source with separate game and chat audio inputs.";
+
+    /// <summary>False when Equalizer APO is not installed; the checkbox and the Add button grey out.</summary>
+    public bool MicGainSupported => _micGain.IsInstalled;
+
+    public string MicGainTooltip =>
+        "Extra gain for Sonar's microphone, in dB — for a mic that is still too quiet at 100%.\n\n" +
+        "Each row saves a gain for one physical microphone. While Sonar is using that microphone, the " +
+        "gain is applied to \"SteelSeries Sonar - Microphone\"; switch microphones in Sonar and the " +
+        "other row's gain takes over, or none if it has no row. The dot is green on the row in use.\n\n" +
+        "Sonar has no setting for this: its mic volume stops at 100%, and its only other levers are " +
+        "the Volume Stabilizer and the EQ. So the gain is an Equalizer APO preamp on Sonar's " +
+        "microphone, after Sonar's own processing — the noise cancelling runs first, and every app " +
+        "recording through Sonar hears the result. Equalizer APO only needs to be installed on " +
+        "Sonar's microphone, not on yours.\n\n" +
+        "0-30 dB. It is digital gain, so too much will clip. Sonar's own meter in GG does not show " +
+        "it, since the gain comes after the meter.\n\n" +
+        "The app keeps its own file in Equalizer APO's config folder and adds two lines to " +
+        "config.txt; nothing else in there is touched. Untick this and the gain is removed.";
+
+    /// <summary>
+    /// What still stands between the user and a working gain, in the order it has to be fixed. Only the
+    /// first unmet step is shown, so the guide reads as one instruction at a time.
+    ///
+    /// None of it can be done silently, which is why it is a guide and not an installer: putting
+    /// Equalizer APO on an endpoint means rewriting protected audio keys under HKLM and rebooting, and
+    /// its own Device Selector is the thing that knows how — including how to undo it.
+    /// </summary>
+    private enum MicGainSetupStep
+    {
+        Ready,
+        InstallEqualizerApo,
+        StartSonar,
+        SelectDevice,
+        EnableEnhancements,
+    }
+
+    private (MicGainSetupStep Step, string Device) _micGainSetup = (MicGainSetupStep.Ready, "");
+
+    /// <summary>
+    /// Sonar's virtual microphone as Windows enumerates it, for the setup guide before Sonar itself
+    /// has answered. <see cref="MicGainService.SonarOutputId"/> wins once it is known.
+    /// </summary>
+    private AudioDevice? _sonarVirtualMic;
+
+    /// <summary>True while a step is outstanding; the guide strip shows itself on this.</summary>
+    public bool MicGainNeedsSetup => _micGainSetup.Step != MicGainSetupStep.Ready;
+
+    public string MicGainSetupText => _micGainSetup.Step switch
+    {
+        MicGainSetupStep.InstallEqualizerApo =>
+            "Step 1 of 3 — Install Equalizer APO. Its installer ends on a device list: open the " +
+            "\"Capture devices\" tab, tick \"SteelSeries Sonar - Microphone\" (not your own " +
+            "microphone), and reboot when it asks.",
+        MicGainSetupStep.StartSonar =>
+            "Sonar's microphone was not found. Start SteelSeries GG with Sonar enabled, then press Refresh.",
+        MicGainSetupStep.SelectDevice =>
+            $"Step 2 of 3 — Equalizer APO is not on \"{_micGainSetup.Device}\" yet. Open the Device " +
+            "Selector, go to the \"Capture devices\" tab, tick that device, press OK and reboot when it asks.",
+        MicGainSetupStep.EnableEnhancements =>
+            $"Step 3 of 3 — Windows has audio enhancements off for \"{_micGainSetup.Device}\", which " +
+            "bypasses Equalizer APO. In Sound settings, open that device under Input and set \"Audio " +
+            "enhancements\" to \"Device Default Effects\".",
+        _ => "",
+    };
+
+    /// <summary>The guide's button label, or "" when the step has nothing to open.</summary>
+    public string MicGainSetupButton => _micGainSetup.Step switch
+    {
+        MicGainSetupStep.InstallEqualizerApo => "Get Equalizer APO…",
+        MicGainSetupStep.SelectDevice => "Open Device Selector…",
+        MicGainSetupStep.EnableEnhancements => "Open Sound settings…",
+        _ => "",
+    };
+
+    public bool MicGainSetupHasButton => MicGainSetupButton.Length > 0;
 
     // ---- settings-backed properties -------------------------------------------------------
 
@@ -471,6 +586,54 @@ public sealed class MainViewModel : ObservableObject
 
     public string ChatMixBalanceText => SonarChatMix.Describe(_settings.ChatMixBalance);
 
+    public bool ApplyMicGain
+    {
+        get => _settings.ApplyMicGain;
+        set
+        {
+            if (_settings.ApplyMicGain == value)
+                return;
+
+            _settings.ApplyMicGain = value;
+            OnPropertyChanged();
+
+            // Ticking the box is the whole setup on the app's side: with no rule yet, Sonar's
+            // microphone gets one, so there is nothing to pick. Adding it persists; do not save twice.
+            if (value && MicGains.Count == 0 && TryAddMicGain())
+                return;
+
+            Persist();
+        }
+    }
+
+    public bool ApplyObsAudio
+    {
+        get => _settings.ApplyObsAudio;
+        set
+        {
+            if (_settings.ApplyObsAudio == value)
+                return;
+
+            _settings.ApplyObsAudio = value;
+            OnPropertyChanged();
+            Persist();
+        }
+    }
+
+    public string ObsAudioTooltip =>
+        "Gives OBS one audio source per Sonar channel, so a recording keeps game, chat, media and " +
+        "your microphone apart.\n\n" +
+        "\"Set up OBS…\" creates Sonar Game, Sonar Chat, Sonar Media, Sonar Aux and Sonar Mic in the " +
+        "scene OBS is showing, and puts each on track 1 (the full mix, which is what a stream carries) " +
+        "plus its own: 2 Game, 3 Chat, 4 Media, 5 Aux, 6 Mic. Sources that already exist under those " +
+        "names are reused. Click it again in another scene to add them there.\n\n" +
+        "\"Keep in sync\" re-points those sources each time OBS starts. SteelSeries GG gives its " +
+        "virtual devices new ids when it rebuilds its driver, which leaves an OBS source silent. It " +
+        "only re-points sources that exist — it never creates one, and never changes tracks.\n\n" +
+        "Needs OBS's WebSocket server: Tools → WebSocket Server Settings → Enable. The port and " +
+        "password are read from OBS's own settings, so there is nothing to enter here. Recording the " +
+        "tracks separately also needs them ticked under OBS's Settings → Output → Recording.";
+
     public bool ShowNotifications
     {
         get => _settings.ShowNotifications;
@@ -561,6 +724,10 @@ public sealed class MainViewModel : ObservableObject
     public async Task RefreshAsync()
     {
         ApplyOutputDevices(_audioDevices.GetRenderDevices());
+
+        // Before the first row exists, so "Add microphone" can start on the mic Sonar is using. The
+        // service's own loop asks Sonar nothing until there is a rule.
+        await _micGain.RefreshSonarAsync();
 
         var presets = await _coordinator.RefreshPresetsAsync();
         ApplyPresets(presets);
@@ -656,6 +823,20 @@ public sealed class MainViewModel : ObservableObject
                     ChannelBoostDevices.Add(device);
             }
 
+            // Physical microphones only, like the boost picker and for the mirror-image reason: a rule
+            // says which mic Sonar is reading, and Sonar never reads its own. Where the gain is written
+            // is not a choice at all — always Sonar's virtual microphone, remembered here for the guide.
+            _sonarVirtualMic = captureDevices.FirstOrDefault(d =>
+                                   IsSonarVirtual(d) && d.Name.Contains("Microphone", StringComparison.OrdinalIgnoreCase))
+                               ?? captureDevices.FirstOrDefault(IsSonarVirtual);
+
+            MicGainDevices.Clear();
+            foreach (var device in WithMissing(captureDevices, captureKnown, MicGainReferences()))
+            {
+                if (!IsSonarVirtual(device))
+                    MicGainDevices.Add(device);
+            }
+
             foreach (var row in Mappings)
                 row.SyncOutputDevice(MappingOutputDevices);
 
@@ -664,6 +845,16 @@ public sealed class MainViewModel : ObservableObject
 
             foreach (var row in ChannelBoosts)
                 row.SyncDevice(ChannelBoostDevices);
+
+            foreach (var row in MicGains)
+                row.SyncDevice(MicGainDevices);
+
+            SyncMicGainInUse();
+
+            // Equalizer APO can be installed while the app is running, and this is the refresh the
+            // user would reach for afterwards.
+            OnPropertyChanged(nameof(MicGainSupported));
+            RefreshMicGainSetup();
 
             DefaultOutputDevice = OutputDevices.FirstOrDefault(d =>
                 string.Equals(d.Id, _settings.DefaultOutputDeviceId, StringComparison.OrdinalIgnoreCase))
@@ -806,6 +997,18 @@ public sealed class MainViewModel : ObservableObject
             changed = true;
         }
 
+        // Capture pool again: a microphone moved to another USB port comes back under a new id.
+        foreach (var rule in _settings.MicGains)
+        {
+            var (id, name) = Repair(rule.DeviceId, rule.DeviceName, captureDevices, captureKnown);
+            if (id == rule.DeviceId && name == rule.DeviceName)
+                continue;
+
+            rule.DeviceId = id;
+            rule.DeviceName = name;
+            changed = true;
+        }
+
         return changed;
     }
 
@@ -826,6 +1029,12 @@ public sealed class MainViewModel : ObservableObject
     private IEnumerable<(string Id, string Name)> ChannelBoostReferences()
     {
         foreach (var rule in _settings.ChannelBoosts)
+            yield return (rule.DeviceId, rule.DeviceName);
+    }
+
+    private IEnumerable<(string Id, string Name)> MicGainReferences()
+    {
+        foreach (var rule in _settings.MicGains)
             yield return (rule.DeviceId, rule.DeviceName);
     }
 
@@ -850,6 +1059,10 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Updates the green "running" dots. Called on a UI timer from the window.</summary>
     public void RefreshRunningFlags()
     {
+        // The guide's steps are all finished outside this app — an installer, the Device Selector,
+        // Windows Settings — so it has to notice on its own. Two registry reads per tick.
+        RefreshMicGainSetup();
+
         var running = _watcher.RunningProcesses;
         foreach (var row in Mappings)
             row.IsRunning = running.Contains(GameMapping.NormalizeProcessName(row.Mapping.ProcessName));
@@ -972,6 +1185,187 @@ public sealed class MainViewModel : ObservableObject
         Persist();
     }
 
+    private void AddMicGain()
+    {
+        if (TryAddMicGain())
+            return;
+
+        MessageBox.Show(
+            Application.Current.MainWindow!,
+            MicGainDevices.Count == 0
+                ? "No microphones were found."
+                : "Every microphone already has a gain rule.",
+            "Nothing to add",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    /// <summary>
+    /// Adds a rule for <see cref="NextMicGainDevice"/>. False when there is none to add — silently, so
+    /// ticking the feature on can call it without a dialog. The row carries its own picker, so this
+    /// only chooses where it starts.
+    /// </summary>
+    private bool TryAddMicGain()
+    {
+        var device = NextMicGainDevice();
+        if (device is null)
+            return false;
+
+        var rule = new MicGainRule
+        {
+            DeviceId = device.Id,
+            DeviceName = AudioDevice.CleanName(device.Name),
+        };
+
+        _settings.MicGains.Add(rule);
+        var row = CreateMicGainRow(rule);
+        row.SyncDevice(MicGainDevices);
+        MicGains.Add(row);
+        OnPropertyChanged(nameof(HasMicGains));
+        SyncMicGainInUse();
+
+        Log($"Added a microphone gain rule for {device.DisplayName}.");
+        Persist();
+        RefreshMicGainSetup();
+        return true;
+    }
+
+    /// <summary>
+    /// The microphone a new rule starts on: the one Sonar is using right now, since that is the rule
+    /// that would take effect immediately; otherwise the first without a rule.
+    /// </summary>
+    private AudioDevice? NextMicGainDevice()
+    {
+        var taken = MicGains
+            .Select(r => r.Rule.DeviceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var free = MicGainDevices.Where(d => !d.IsMissing && !taken.Contains(d.Id)).ToList();
+        var inUse = _micGain.SonarInputId;
+
+        return free.FirstOrDefault(d => string.Equals(d.Id, inUse, StringComparison.OrdinalIgnoreCase))
+            ?? free.FirstOrDefault();
+    }
+
+    /// <summary>Lights the "in use" marker on the row for the microphone Sonar is reading.</summary>
+    private void SyncMicGainInUse()
+    {
+        var inUse = _micGain.SonarInputId;
+
+        foreach (var row in MicGains)
+            row.SyncSonarMic(inUse);
+    }
+
+    /// <summary>
+    /// Sonar's microphone moved, or Sonar has just told us which endpoint is its own. Both change which
+    /// row is live, and the second changes which endpoint the setup guide is about.
+    /// </summary>
+    private void OnSonarMicChanged() => Dispatch(() =>
+    {
+        SyncMicGainInUse();
+        RefreshMicGainSetup();
+    });
+
+    /// <summary>
+    /// Works out the first unmet setup step and re-raises the guide's bindings when it changed. Called
+    /// from the window's timer, so it must stay cheap and must not raise when nothing moved.
+    /// </summary>
+    private void RefreshMicGainSetup()
+    {
+        var setup = ResolveMicGainSetup();
+        if (setup == _micGainSetup)
+            return;
+
+        _micGainSetup = setup;
+        OnPropertyChanged(nameof(MicGainNeedsSetup));
+        OnPropertyChanged(nameof(MicGainSetupText));
+        OnPropertyChanged(nameof(MicGainSetupButton));
+        OnPropertyChanged(nameof(MicGainSetupHasButton));
+        OnPropertyChanged(nameof(MicGainSupported));
+    }
+
+    private (MicGainSetupStep Step, string Device) ResolveMicGainSetup()
+    {
+        if (!_micGain.IsInstalled)
+            return (MicGainSetupStep.InstallEqualizerApo, "");
+
+        // Only ever about Sonar's own microphone: that is the one endpoint the gain is written for, so
+        // it is the one endpoint Equalizer APO has to be on. The user's physical mics need nothing.
+        var id = _micGain.SonarOutputId ?? _sonarVirtualMic?.Id;
+        if (string.IsNullOrEmpty(id))
+            return (MicGainSetupStep.StartSonar, "");
+
+        var name = MicGainSetupDeviceName(id);
+
+        return _micGain.ReadinessOf(id) switch
+        {
+            MicGainReadiness.NotInstalled => (MicGainSetupStep.SelectDevice, name),
+            MicGainReadiness.EnhancementsOff => (MicGainSetupStep.EnableEnhancements, name),
+            _ => (MicGainSetupStep.Ready, ""),
+        };
+    }
+
+    /// <summary>The name the Device Selector and Sound settings list the endpoint under, minus the driver suffix.</summary>
+    private string MicGainSetupDeviceName(string id)
+    {
+        var name = string.Equals(_sonarVirtualMic?.Id, id, StringComparison.OrdinalIgnoreCase)
+            ? _sonarVirtualMic!.Name
+            : "SteelSeries Sonar - Microphone";
+
+        var paren = name.IndexOf(" (", StringComparison.Ordinal);
+        return paren > 0 ? name[..paren] : name;
+    }
+
+    /// <summary>
+    /// Opens the thing the current step is done in. Everything here is launched through the shell, so
+    /// the Device Selector raises its own UAC prompt and this app never runs elevated.
+    /// </summary>
+    private void RunMicGainSetupStep()
+    {
+        var target = _micGainSetup.Step switch
+        {
+            MicGainSetupStep.InstallEqualizerApo => MicGainService.DownloadUrl,
+            MicGainSetupStep.SelectDevice => MicGainService.DeviceSelectorPath,
+            MicGainSetupStep.EnableEnhancements => "ms-settings:sound",
+            _ => null,
+        };
+
+        if (target is null)
+        {
+            if (_micGainSetup.Step == MicGainSetupStep.SelectDevice)
+                Log("Equalizer APO's Device Selector was not found in its install folder.");
+
+            return;
+        }
+
+        try
+        {
+            using var _ = Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or
+                                       System.IO.FileNotFoundException)
+        {
+            // Declining the UAC prompt lands here too, and that is not worth a log line.
+            Debug.WriteLine($"Mic gain setup step failed: {ex.Message}");
+        }
+    }
+
+    private void RemoveMicGain(object? parameter)
+    {
+        if (parameter is not MicGainRowViewModel row)
+            return;
+
+        // Unlike a volume boost there is something to undo, and Persist does it: the rule drops out
+        // of the file Equalizer APO reads, so the microphone goes back to its own level.
+        _settings.MicGains.Remove(row.Rule);
+        MicGains.Remove(row);
+        OnPropertyChanged(nameof(HasMicGains));
+        RefreshMicGainSetup();
+
+        Log($"Removed the microphone gain rule for {row.SelectedDevice?.DisplayName ?? row.Rule.DeviceName}.");
+        Persist();
+    }
+
     private void AddRecordingApp()
     {
         var dialog = new Views.AddMappingDialog(recordingApp: true)
@@ -1058,6 +1452,15 @@ public sealed class MainViewModel : ObservableObject
 
     private RecordingAppRowViewModel CreateRecordingRow(RecordingApp app) => new(app, Persist);
 
+    private MicGainRowViewModel CreateMicGainRow(MicGainRule rule) => new(rule, OnMicGainRowChanged);
+
+    /// <summary>A row edit can be a different device, which changes whether it is the one in use.</summary>
+    private void OnMicGainRowChanged()
+    {
+        SyncMicGainInUse();
+        Persist();
+    }
+
     private void Persist()
     {
         SettingsStore.Save(_settings);
@@ -1065,6 +1468,8 @@ public sealed class MainViewModel : ObservableObject
         _defaultGuard.UpdateSettings(_settings);
         _channelBoosts.UpdateSettings(_settings);
         _chatMix.UpdateSettings(_settings);
+        _micGain.UpdateSettings(_settings);
+        _obsAudio.UpdateSettings(_settings);
     }
 
     // ---- coordinator events ------------------------------------------------------------------

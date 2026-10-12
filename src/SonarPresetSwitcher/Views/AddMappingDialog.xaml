@@ -63,15 +63,29 @@
                      TextChanged="OnFormChanged" />
 
             <TextBlock x:Name="PresetLabel"
-                       Text="Game preset (My Presets — favourites first)"
+                       Text="Game preset — search by name on the left, or pick from the list"
                        Foreground="{StaticResource Dim}"
                        FontSize="11" />
-            <ComboBox x:Name="PresetBox"
-                      Margin="0,4,0,0"
-                      ItemTemplate="{StaticResource PresetItem}"
-                      TextSearch.TextPath="Name"
-                      SelectionChanged="OnFormChanged"
-                      ToolTip="Type the first letters of a preset name to jump to it." />
+            <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="170" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="PresetSearchBox"
+                         Grid.Column="0"
+                         Padding="6,5"
+                         TextChanged="OnPresetSearchChanged"
+                         ToolTip="Search presets by name. Type any part of the name; the list on the right narrows to the matches and the first one is selected." />
+
+                <ComboBox x:Name="PresetBox"
+                          Grid.Column="1"
+                          Margin="8,0,0,0"
+                          ItemTemplate="{StaticResource PresetItem}"
+                          TextSearch.TextPath="Name"
+                          SelectionChanged="OnFormChanged"
+                          ToolTip="Sonar Game preset applied while this app is running. Use the box on the left to search by name." />
+            </Grid>
         </StackPanel>
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

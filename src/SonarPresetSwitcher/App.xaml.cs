@@ -20,6 +20,8 @@ public partial class App : Application
     private PresetCoordinator? _coordinator;
     private ChannelBoostService? _channelBoosts;
     private ChatMixService? _chatMix;
+    private MicGainService? _micGain;
+    private ObsAudioService? _obsAudio;
     private TrayIconHost? _tray;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -54,10 +56,12 @@ public partial class App : Application
         _coordinator = new PresetCoordinator(_client, _watcher, _routing, settings);
         _channelBoosts = new ChannelBoostService(_client, settings);
         _chatMix = new ChatMixService(_client, settings);
+        _micGain = new MicGainService(_client, settings);
+        _obsAudio = new ObsAudioService(_client, _watcher, settings);
 
         var viewModel = new MainViewModel(
             _client, _watcher, _coordinator, _audioDevices, _deviceWatcher, _routing, _defaultGuard,
-            _channelBoosts, _chatMix, settings);
+            _channelBoosts, _chatMix, _micGain, _obsAudio, settings);
         var window = new MainWindow(viewModel);
         MainWindow = window;
 
@@ -67,12 +71,16 @@ public partial class App : Application
         if (!startMinimized)
             window.Show();
 
+        // Before the watcher: its first tick reports what is already running, OBS included.
+        _obsAudio.Start();
+
         _coordinator.Start();
         _watcher.Start();
         _defaultGuard.Start();
         _channelBoosts.Start();
         _chatMix.Start();
         _deviceWatcher.Start();
+        _micGain.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -82,6 +90,8 @@ public partial class App : Application
         _defaultGuard?.Dispose();
         _channelBoosts?.Dispose();
         _chatMix?.Dispose();
+        _micGain?.Dispose();
+        _obsAudio?.Dispose();
         _deviceWatcher?.Dispose();
         _routing?.Dispose();
         _watcher?.Dispose();

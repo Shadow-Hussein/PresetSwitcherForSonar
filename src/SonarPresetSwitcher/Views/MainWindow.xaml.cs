@@ -1,6 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using SonarPresetSwitcher.ViewModels;
 
@@ -42,6 +45,36 @@ public partial class MainWindow : Window
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void OnCloseWindow(object sender, RoutedEventArgs e) => Close();
+
+    // A closed ComboBox that has keyboard focus eats the wheel to step its selection. On a page that
+    // scrolls, that silently changes a preset or a device while the user is only trying to move down,
+    // so the wheel is handed to the page instead. An open dropdown keeps it: that list is what the
+    // user is scrolling.
+    private void OnTabsPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        var node = e.OriginalSource as DependencyObject;
+        while (node is not null && !ReferenceEquals(node, sender))
+        {
+            if (node is ComboBox combo)
+            {
+                if (combo.IsDropDownOpen || VisualTreeHelper.GetParent(combo) is not UIElement parent)
+                {
+                    return;
+                }
+
+                e.Handled = true;
+                parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                {
+                    RoutedEvent = MouseWheelEvent,
+                    Source = combo,
+                });
+                return;
+            }
+
+            // Text runs are not visuals, and VisualTreeHelper throws on anything that is not one.
+            node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+        }
+    }
 
     private void OnOpenProjectPage(object sender, RoutedEventArgs e)
     {

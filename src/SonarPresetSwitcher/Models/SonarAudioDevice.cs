@@ -21,6 +21,14 @@ public sealed class SonarAudioDevice
     [JsonPropertyName("dataFlow")]
     public string DataFlow { get; set; } = "";
 
+    /// <summary>
+    /// Which Sonar channel a virtual endpoint belongs to — <c>chatCapture</c> for Sonar's microphone,
+    /// <c>none</c> for real hardware. Read by <see cref="Services.MicGainService"/> to find the one
+    /// endpoint a microphone gain has to be written for.
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string Role { get; set; } = "";
+
     /// <summary>True for a SteelSeries Sonar Virtual Audio Device.</summary>
     [JsonPropertyName("isVad")]
     public bool IsVad { get; set; }

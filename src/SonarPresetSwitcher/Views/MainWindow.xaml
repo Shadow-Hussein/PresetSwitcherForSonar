@@ -188,28 +188,27 @@
                 </Grid>
             </Border>
 
-            <TabControl Grid.Row="1">
+            <TabControl Grid.Row="1" PreviewMouseWheel="OnTabsPreviewMouseWheel">
 
-                <TabItem Header="Mapped presets">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                <!--
+                    Pages are plain top-to-bottom StackPanels with no ScrollViewer of their own: the
+                    TabControl template in Theme.xaml scrolls the selected page as a whole.
+                -->
+                <TabItem Header="Games">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
                             <TextBlock Text="GAME → PRESET → OUTPUT DEVICE" Style="{StaticResource SectionHeader}" />
                             <Button Content="Add mapping…"
                                     HorizontalAlignment="Right"
                                     Command="{Binding AddMappingCommand}" />
                         </Grid>
 
-                        <Grid Grid.Row="1">
+                        <Grid>
                             <TextBlock Text="No mappings yet. Click “Add mapping…” to bind a game to one of your Sonar presets."
                                        Foreground="{StaticResource Dim}"
                                        TextWrapping="Wrap"
                                        HorizontalAlignment="Center"
-                                       VerticalAlignment="Center">
+                                       Margin="0,6,0,14">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                         <Setter Property="Visibility" Value="Visible" />
@@ -222,253 +221,145 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding Mappings}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type vm:MappingRowViewModel}">
-                                            <Border Background="#12141A"
-                                                    BorderBrush="{StaticResource Line}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="6"
-                                                    Padding="12,10"
-                                                    Margin="0,0,0,8">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="200" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="200" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
+                            <ItemsControl ItemsSource="{Binding Mappings}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:MappingRowViewModel}">
+                                        <Border Background="#12141A"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="12,10"
+                                                Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="200" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="200" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
 
-                                                    <CheckBox Grid.Column="0"
-                                                              IsChecked="{Binding Enabled}"
-                                                              ToolTip="Enable this mapping"
-                                                              Margin="0,0,10,0" />
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding Enabled}"
+                                                          ToolTip="Enable this mapping"
+                                                          Margin="0,0,10,0" />
 
-                                                    <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
-                                                        <Ellipse.Style>
-                                                            <Style TargetType="Ellipse">
-                                                                <Setter Property="Fill" Value="#3A3F4B" />
-                                                                <Setter Property="ToolTip" Value="Not running" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
-                                                                        <Setter Property="Fill" Value="#22C55E" />
-                                                                        <Setter Property="ToolTip" Value="Running" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Ellipse.Style>
-                                                    </Ellipse>
+                                                <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="#3A3F4B" />
+                                                            <Setter Property="ToolTip" Value="Not running" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Fill" Value="#22C55E" />
+                                                                    <Setter Property="ToolTip" Value="Running" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
 
-                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,10,0">
-                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                   Foreground="{StaticResource Fg}"
-                                                                   FontWeight="SemiBold"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding ProcessLabel}"
-                                                                   Foreground="{StaticResource Dim}"
-                                                                   FontSize="11" />
-                                                    </StackPanel>
-
-                                                    <ComboBox Grid.Column="3"
-                                                              ItemsSource="{Binding DataContext.MappingPresets, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
-                                                              ItemTemplate="{StaticResource PresetItem}"
-                                                              TextSearch.TextPath="Name"
-                                                              ToolTip="Sonar Game preset applied while this app is running.&#10;Pick &quot;Use default (Settings)&quot; to map the app for audio routing only, leaving the preset alone.&#10;The list is long — type the first letters to jump." />
-
-                                                    <TextBlock Grid.Column="4"
-                                                               Text="⚠"
-                                                               Margin="8,0,0,0"
-                                                               FontSize="15"
-                                                               Foreground="#F59E0B"
-                                                               ToolTip="{Binding MissingPresetTooltip}"
-                                                               Visibility="{Binding PresetMissing, Converter={StaticResource BoolToVis}}" />
-
-                                                    <TextBlock Grid.Column="5"
-                                                               Text="🔊"
-                                                               Margin="12,0,6,0"
-                                                               FontSize="13"
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               Foreground="{StaticResource Fg}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ProcessLabel}"
                                                                Foreground="{StaticResource Dim}"
-                                                               ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                               FontSize="11" />
+                                                </StackPanel>
 
-                                                    <ComboBox Grid.Column="6"
-                                                              ItemsSource="{Binding DataContext.MappingOutputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
-                                                              ItemTemplate="{StaticResource AudioDeviceItem}"
-                                                              TextSearch.TextPath="DisplayName"
-                                                              IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                <ComboBox Grid.Column="3"
+                                                          ItemsSource="{Binding DataContext.MappingPresets, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource PresetItem}"
+                                                          TextSearch.TextPath="Name"
+                                                          ToolTip="Sonar Game preset applied while this app is running.&#10;Pick &quot;Use default (Settings)&quot; to map the app for audio routing only, leaving the preset alone.&#10;The list is long — type the first letters to jump." />
 
-                                                    <Button Grid.Column="7"
-                                                            Content="Remove"
-                                                            Margin="10,0,0,0"
-                                                            Padding="10,5"
-                                                            Command="{Binding DataContext.RemoveMappingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}" />
+                                                <TextBlock Grid.Column="4"
+                                                           Text="⚠"
+                                                           Margin="8,0,0,0"
+                                                           FontSize="15"
+                                                           Foreground="#F59E0B"
+                                                           ToolTip="{Binding MissingPresetTooltip}"
+                                                           Visibility="{Binding PresetMissing, Converter={StaticResource BoolToVis}}" />
 
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
+                                                <TextBlock Grid.Column="5"
+                                                           Text="🔊"
+                                                           Margin="12,0,6,0"
+                                                           FontSize="13"
+                                                           Foreground="{StaticResource Dim}"
+                                                           ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <ComboBox Grid.Column="6"
+                                                          ItemsSource="{Binding DataContext.MappingOutputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource AudioDeviceItem}"
+                                                          TextSearch.TextPath="DisplayName"
+                                                          IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          ToolTip="{Binding DataContext.OutputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <Button Grid.Column="7"
+                                                        Content="Remove"
+                                                        Margin="10,0,0,0"
+                                                        Padding="10,5"
+                                                        Command="{Binding DataContext.RemoveMappingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Grid>
-                    </Grid>
+
+                        <!-- What applies when a mapping does not say otherwise, so it lives with them. -->
+                        <Border Height="1"
+                                Background="{StaticResource Line}"
+                                Margin="0,4,0,12" />
+
+                        <TextBlock Text="DEFAULTS" Style="{StaticResource SectionHeader}" />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Default preset" Margin="0,0,10,0" />
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      ItemsSource="{Binding Presets}"
+                                      SelectedItem="{Binding DefaultPreset, Mode=TwoWay}"
+                                      ItemTemplate="{StaticResource PresetItem}"
+                                      TextSearch.TextPath="Name"
+                                      ToolTip="Restored when no mapped game is running.&#10;Type the first letters to jump." />
+
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Default output device for mapped apps" Margin="20,0,10,0" />
+                            <ComboBox Grid.Row="0" Grid.Column="3"
+                                      ItemsSource="{Binding OutputDevices}"
+                                      SelectedItem="{Binding DefaultOutputDevice, Mode=TwoWay}"
+                                      ItemTemplate="{StaticResource AudioDeviceItem}"
+                                      TextSearch.TextPath="DisplayName"
+                                      IsEnabled="{Binding AudioRoutingSupported}"
+                                      ToolTip="{Binding OutputDeviceTooltip}" />
+                        </Grid>
+                    </StackPanel>
                 </TabItem>
 
-                <!--
-                    Per-device Sonar channel volume. Sonar keeps one volume per channel rather than one
-                    per channel per device, so each row remembers a level for one output device and the
-                    service puts it back when Sonar starts playing that channel through it.
-                -->
-                <TabItem Header="Additional features">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,10">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="RECORDING APPS"
-                                           Style="{StaticResource SectionHeader}"
-                                           Margin="0,0,12,0" />
-                                <CheckBox Content="Enabled"
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,18,8"
-                                          IsChecked="{Binding ApplyRecordingApps}"
-                                          ToolTip="{Binding RecordingAppsTooltip}" />
-
-                                <TextBlock Text="microphone and Sonar mixer mode, per capture app"
-                                           Foreground="{StaticResource Dim}"
-                                           FontSize="11"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,0,8"
-                                           ToolTip="{Binding RecordingAppsTooltip}" />
-                            </StackPanel>
-                            <Button Content="Add app…"
-                                    HorizontalAlignment="Right"
-                                    Command="{Binding AddRecordingAppCommand}" />
-                        </Grid>
-
+                <TabItem Header="Volume">
+                    <StackPanel>
                         <!--
-                            Auto rather than star: the volume-boost list below takes the slack, so a
-                            short recording list does not leave a gap the boost rules could have used.
-                            The MaxHeight is what stops a long one squeezing them out instead.
+                            Per-device Sonar channel volume. Sonar keeps one volume per channel rather than one
+                            per channel per device, so each row remembers a level for one output device and the
+                            service puts it back when Sonar starts playing that channel through it.
                         -->
-                        <Grid Grid.Row="1">
-                            <TextBlock Text="No recording apps yet. Click “Add app…” to point OBS, Discord or a recorder at a microphone."
-                                       Foreground="{StaticResource Dim}"
-                                       TextWrapping="Wrap"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,0,0,10">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasRecordingApps}" Value="True">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="180">
-                                <ItemsControl ItemsSource="{Binding RecordingApps}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type vm:RecordingAppRowViewModel}">
-                                            <Border Background="#12141A"
-                                                    BorderBrush="{StaticResource Line}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="6"
-                                                    Padding="12,10"
-                                                    Margin="0,0,0,8">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="200" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-
-                                                    <CheckBox Grid.Column="0"
-                                                              IsChecked="{Binding Enabled}"
-                                                              ToolTip="Manage this app"
-                                                              Margin="0,0,10,0" />
-
-                                                    <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
-                                                        <Ellipse.Style>
-                                                            <Style TargetType="Ellipse">
-                                                                <Setter Property="Fill" Value="#3A3F4B" />
-                                                                <Setter Property="ToolTip" Value="Not running." />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
-                                                                        <Setter Property="Fill" Value="{StaticResource Accent}" />
-                                                                        <Setter Property="ToolTip" Value="Running." />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Ellipse.Style>
-                                                    </Ellipse>
-
-                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                                                        <TextBlock Text="{Binding ProcessLabel}"
-                                                                   Foreground="{StaticResource Dim}"
-                                                                   FontSize="11" />
-                                                    </StackPanel>
-
-                                                    <TextBlock Grid.Column="3"
-                                                               Text="🎙 Records from"
-                                                               Margin="0,0,6,0"
-                                                               FontSize="13"
-                                                               VerticalAlignment="Center"
-                                                               Foreground="{StaticResource Dim}"
-                                                               ToolTip="{Binding DataContext.InputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                                    <ComboBox Grid.Column="4"
-                                                              VerticalAlignment="Center"
-                                                              ItemsSource="{Binding DataContext.RecordingInputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
-                                                              ItemTemplate="{StaticResource AudioDeviceItem}"
-                                                              TextSearch.TextPath="DisplayName"
-                                                              IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              ToolTip="{Binding DataContext.InputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                                    <CheckBox Grid.Column="5"
-                                                              Content="Streamer mode"
-                                                              Margin="14,0,0,0"
-                                                              VerticalAlignment="Center"
-                                                              IsChecked="{Binding RequireStreamerMode}"
-                                                              ToolTip="{Binding DataContext.StreamerModeTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                                    <Button Grid.Column="6"
-                                                            Content="Remove"
-                                                            Margin="14,0,0,0"
-                                                            Padding="10,5"
-                                                            Command="{Binding DataContext.RemoveRecordingAppCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Grid>
-
-                        <Grid Grid.Row="2" Margin="0,18,0,10">
+                        <Grid Margin="0,0,0,10">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="SONAR VOLUME BOOST PER DEVICE"
                                            Style="{StaticResource SectionHeader}"
@@ -507,12 +398,12 @@
                                     Command="{Binding AddChannelBoostCommand}" />
                         </Grid>
 
-                        <Grid Grid.Row="3">
+                        <Grid>
                             <TextBlock Text="No devices yet. Click “Add device…” to save a Game and Media volume boost for one output device."
                                        Foreground="{StaticResource Dim}"
                                        TextWrapping="Wrap"
                                        HorizontalAlignment="Center"
-                                       VerticalAlignment="Center">
+                                       Margin="0,6,0,14">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                         <Setter Property="Visibility" Value="Visible" />
@@ -525,100 +416,98 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding ChannelBoosts}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type vm:ChannelBoostRowViewModel}">
-                                            <Border Background="#12141A"
-                                                    BorderBrush="{StaticResource Line}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="6"
-                                                    Padding="12,10"
-                                                    Margin="0,0,0,8">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="44" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="44" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
+                            <ItemsControl ItemsSource="{Binding ChannelBoosts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:ChannelBoostRowViewModel}">
+                                        <Border Background="#12141A"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="12,10"
+                                                Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="44" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="44" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
 
-                                                    <CheckBox Grid.Column="0"
-                                                              IsChecked="{Binding Enabled}"
-                                                              ToolTip="Enable this rule"
-                                                              Margin="0,0,10,0" />
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding Enabled}"
+                                                          ToolTip="Enable this rule"
+                                                          Margin="0,0,10,0" />
 
-                                                    <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
-                                                        <Ellipse.Style>
-                                                            <Style TargetType="Ellipse">
-                                                                <Setter Property="Fill" Value="#3A3F4B" />
-                                                                <Setter Property="ToolTip" Value="{Binding InUseTooltip}" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsInUse}" Value="True">
-                                                                        <Setter Property="Fill" Value="#22C55E" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Ellipse.Style>
-                                                    </Ellipse>
+                                                <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="#3A3F4B" />
+                                                            <Setter Property="ToolTip" Value="{Binding InUseTooltip}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInUse}" Value="True">
+                                                                    <Setter Property="Fill" Value="#22C55E" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
 
-                                                    <ComboBox Grid.Column="2"
-                                                              Margin="0,0,10,0"
-                                                              ItemsSource="{Binding DataContext.ChannelBoostDevices, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
-                                                              ItemTemplate="{StaticResource AudioDeviceItem}"
-                                                              TextSearch.TextPath="DisplayName"
-                                                              ToolTip="{Binding DataContext.ChannelBoostTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                <ComboBox Grid.Column="2"
+                                                          Margin="0,0,10,0"
+                                                          ItemsSource="{Binding DataContext.ChannelBoostDevices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource AudioDeviceItem}"
+                                                          TextSearch.TextPath="DisplayName"
+                                                          ToolTip="{Binding DataContext.ChannelBoostTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
 
-                                                    <TextBlock Grid.Column="3"
-                                                               Text="Game dB"
-                                                               Foreground="{StaticResource Dim}"
-                                                               Margin="0,0,6,0" />
+                                                <TextBlock Grid.Column="3"
+                                                           Text="Game dB"
+                                                           Foreground="{StaticResource Dim}"
+                                                           Margin="0,0,6,0" />
 
-                                                    <TextBox Grid.Column="4"
-                                                             Text="{Binding GameBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                                             TextAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             VerticalContentAlignment="Center"
-                                                             Padding="2,3"
-                                                             ToolTip="Game channel Volume Boost in dB, 0-12. Leave empty to leave this channel alone." />
+                                                <TextBox Grid.Column="4"
+                                                         Text="{Binding GameBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         TextAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         VerticalContentAlignment="Center"
+                                                         Padding="2,3"
+                                                         ToolTip="Game channel Volume Boost in dB, 0-12. Leave empty to leave this channel alone." />
 
-                                                    <TextBlock Grid.Column="5"
-                                                               Text="Media dB"
-                                                               Foreground="{StaticResource Dim}"
-                                                               Margin="14,0,6,0" />
+                                                <TextBlock Grid.Column="5"
+                                                           Text="Media dB"
+                                                           Foreground="{StaticResource Dim}"
+                                                           Margin="14,0,6,0" />
 
-                                                    <TextBox Grid.Column="6"
-                                                             Text="{Binding MediaBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                                             TextAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             VerticalContentAlignment="Center"
-                                                             Padding="2,3"
-                                                             ToolTip="Media channel Volume Boost in dB, 0-12. Leave empty to leave this channel alone." />
+                                                <TextBox Grid.Column="6"
+                                                         Text="{Binding MediaBoostText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         TextAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         VerticalContentAlignment="Center"
+                                                         Padding="2,3"
+                                                         ToolTip="Media channel Volume Boost in dB, 0-12. Leave empty to leave this channel alone." />
 
-                                                    <Button Grid.Column="7"
-                                                            Content="Remove"
-                                                            Margin="10,0,0,0"
-                                                            Padding="10,5"
-                                                            Command="{Binding DataContext.RemoveChannelBoostCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
+                                                <Button Grid.Column="7"
+                                                        Content="Remove"
+                                                        Margin="10,0,0,0"
+                                                        Padding="10,5"
+                                                        Command="{Binding DataContext.RemoveChannelBoostCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Grid>
 
                         <!--
                             ChatMix is Sonar's game/chat balance, normally driven by the headset dial.
                             Applied once per connection rather than held, so the dial still works.
                         -->
-                        <StackPanel Grid.Row="4" Margin="0,12,0,0">
+                        <StackPanel Margin="0,12,0,0">
                             <Border Height="1"
                                     Background="{StaticResource Line}"
                                     Margin="0,0,0,12" />
@@ -678,76 +567,379 @@
                                        FontSize="11"
                                        TextWrapping="Wrap" />
                         </StackPanel>
-                    </Grid>
+
+                        <!--
+                            Not a Sonar setting: Sonar's mic volume stops at 100%. Written to Equalizer
+                            APO as a per-microphone preamp, so the whole block greys out without it.
+                        -->
+                        <StackPanel Margin="0,12,0,0">
+                            <Border Height="1"
+                                    Background="{StaticResource Line}"
+                                    Margin="0,0,0,12" />
+
+                            <Grid Margin="0,0,0,10">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="MICROPHONE GAIN"
+                                               Style="{StaticResource SectionHeader}"
+                                               Margin="0,0,12,0" />
+
+                                    <CheckBox Content="Enabled"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,18,8"
+                                              IsChecked="{Binding ApplyMicGain}"
+                                              IsEnabled="{Binding MicGainSupported}"
+                                              ToolTip="{Binding MicGainTooltip}"
+                                              ToolTipService.ShowOnDisabled="True" />
+
+                                    <TextBlock Text="extra dB on Sonar's microphone, per input device"
+                                               Foreground="{StaticResource Dim}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,0,8"
+                                               ToolTip="{Binding MicGainTooltip}" />
+                                </StackPanel>
+                                <Button Content="Add microphone…"
+                                        HorizontalAlignment="Right"
+                                        IsEnabled="{Binding MicGainSupported}"
+                                        Command="{Binding AddMicGainCommand}" />
+                            </Grid>
+
+                            <!--
+                                The setup guide: one outstanding step at a time, with the button that
+                                opens wherever that step is done. Gone once the gain can reach the mic.
+                            -->
+                            <Border Background="#1A1710"
+                                    BorderBrush="#5C4A1F"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="12,10"
+                                    Margin="0,0,0,8">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding MicGainNeedsSetup}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding MicGainSetupText}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center" />
+
+                                    <Button Grid.Column="1"
+                                            Content="{Binding MicGainSetupButton}"
+                                            Margin="12,0,0,0"
+                                            Padding="10,5"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding MicGainSetupCommand}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding MicGainSetupHasButton}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding MicGains}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:MicGainRowViewModel}">
+                                        <Border Background="#12141A"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="12,10"
+                                                Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="44" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding Enabled}"
+                                                          ToolTip="Enable this rule"
+                                                          Margin="0,0,10,0" />
+
+                                                <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="#3A3F4B" />
+                                                            <Setter Property="ToolTip" Value="{Binding InUseTooltip}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInUse}" Value="True">
+                                                                    <Setter Property="Fill" Value="#22C55E" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+
+                                                <ComboBox Grid.Column="2"
+                                                          Margin="0,0,10,0"
+                                                          ItemsSource="{Binding DataContext.MicGainDevices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource AudioDeviceItem}"
+                                                          TextSearch.TextPath="DisplayName"
+                                                          ToolTip="{Binding DataContext.MicGainTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <TextBlock Grid.Column="3"
+                                                           Text="Gain dB"
+                                                           Foreground="{StaticResource Dim}"
+                                                           Margin="0,0,6,0" />
+
+                                                <TextBox Grid.Column="4"
+                                                         Text="{Binding GainText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         TextAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         VerticalContentAlignment="Center"
+                                                         Padding="2,3"
+                                                         ToolTip="Gain on Sonar's microphone while Sonar is using this device, in dB: 0-30 in 0.5 steps. 0 adds none." />
+
+                                                <Button Grid.Column="5"
+                                                        Content="Remove"
+                                                        Margin="10,0,0,0"
+                                                        Padding="10,5"
+                                                        Command="{Binding DataContext.RemoveMicGainCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </TabItem>
+
+                <TabItem Header="Recording">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="RECORDING APPS"
+                                           Style="{StaticResource SectionHeader}"
+                                           Margin="0,0,12,0" />
+                                <CheckBox Content="Enabled"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,18,8"
+                                          IsChecked="{Binding ApplyRecordingApps}"
+                                          ToolTip="{Binding RecordingAppsTooltip}" />
+
+                                <TextBlock Text="microphone and Sonar mixer mode, per capture app"
+                                           Foreground="{StaticResource Dim}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,0,8"
+                                           ToolTip="{Binding RecordingAppsTooltip}" />
+                            </StackPanel>
+                            <Button Content="Add app…"
+                                    HorizontalAlignment="Right"
+                                    Command="{Binding AddRecordingAppCommand}" />
+                        </Grid>
+
+                        <Grid>
+                            <TextBlock Text="No recording apps yet. Click “Add app…” to point OBS, Discord or a recorder at a microphone."
+                                       Foreground="{StaticResource Dim}"
+                                       TextWrapping="Wrap"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,10">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasRecordingApps}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <ItemsControl ItemsSource="{Binding RecordingApps}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:RecordingAppRowViewModel}">
+                                        <Border Background="#12141A"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="12,10"
+                                                Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="200" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding Enabled}"
+                                                          ToolTip="Manage this app"
+                                                          Margin="0,0,10,0" />
+
+                                                <Ellipse Grid.Column="1" Width="8" Height="8" Margin="0,0,10,0">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="#3A3F4B" />
+                                                            <Setter Property="ToolTip" Value="Not running." />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Fill" Value="{StaticResource Accent}" />
+                                                                    <Setter Property="ToolTip" Value="Running." />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding ProcessLabel}"
+                                                               Foreground="{StaticResource Dim}"
+                                                               FontSize="11" />
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Column="3"
+                                                           Text="🎙 Records from"
+                                                           Margin="0,0,6,0"
+                                                           FontSize="13"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource Dim}"
+                                                           ToolTip="{Binding DataContext.InputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <ComboBox Grid.Column="4"
+                                                          VerticalAlignment="Center"
+                                                          ItemsSource="{Binding DataContext.RecordingInputDevices, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
+                                                          ItemTemplate="{StaticResource AudioDeviceItem}"
+                                                          TextSearch.TextPath="DisplayName"
+                                                          IsEnabled="{Binding DataContext.AudioRoutingSupported, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          ToolTip="{Binding DataContext.InputDeviceTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <CheckBox Grid.Column="5"
+                                                          Content="Streamer mode"
+                                                          Margin="14,0,0,0"
+                                                          VerticalAlignment="Center"
+                                                          IsChecked="{Binding RequireStreamerMode}"
+                                                          ToolTip="{Binding DataContext.StreamerModeTooltip, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                                                <Button Grid.Column="6"
+                                                        Content="Remove"
+                                                        Margin="14,0,0,0"
+                                                        Padding="10,5"
+                                                        Command="{Binding DataContext.RemoveRecordingAppCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+
+                        <Border Height="1"
+                                Background="{StaticResource Line}"
+                                Margin="0,8,0,12" />
+
+                        <Grid Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="OBS AUDIO SOURCES"
+                                           Style="{StaticResource SectionHeader}"
+                                           Margin="0,0,12,0" />
+
+                                <CheckBox Content="Keep in sync"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,18,8"
+                                          IsChecked="{Binding ApplyObsAudio}"
+                                          ToolTip="{Binding ObsAudioTooltip}" />
+
+                                <TextBlock Text="one source per Sonar channel, each on its own track"
+                                           Foreground="{StaticResource Dim}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,0,8"
+                                           ToolTip="{Binding ObsAudioTooltip}" />
+                            </StackPanel>
+                            <Button Content="Set up OBS…"
+                                    HorizontalAlignment="Right"
+                                    Command="{Binding SetupObsCommand}"
+                                    ToolTip="{Binding ObsAudioTooltip}" />
+                        </Grid>
+
+                        <TextBlock Text="Track 1 full mix · 2 Game · 3 Chat · 4 Media · 5 Aux · 6 Mic. Needs OBS running with its WebSocket server enabled (Tools → WebSocket Server Settings)."
+                                   Foreground="{StaticResource Dim}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8" />
+                    </StackPanel>
                 </TabItem>
 
                 <TabItem Header="Settings">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="220" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="220" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="WINDOWS DEFAULT DEVICE" Style="{StaticResource SectionHeader}" />
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Default preset" Margin="0,0,10,0" />
-                        <ComboBox Grid.Row="0" Grid.Column="1"
-                                  ItemsSource="{Binding Presets}"
-                                  SelectedItem="{Binding DefaultPreset, Mode=TwoWay}"
-                                  ItemTemplate="{StaticResource PresetItem}"
-                                  TextSearch.TextPath="Name"
-                                  ToolTip="Restored when no mapped game is running.&#10;Type the first letters to jump." />
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox Content="Hold Windows default"
+                                      IsChecked="{Binding KeepWindowsDefault}"
+                                      IsEnabled="{Binding KeepWindowsDefaultSupported}"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,10,0"
+                                      ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+                            <ComboBox Width="260"
+                                      ItemsSource="{Binding SystemDefaultDevices}"
+                                      SelectedItem="{Binding KeepWindowsDefaultDevice, Mode=TwoWay}"
+                                      ItemTemplate="{StaticResource AudioDeviceItem}"
+                                      TextSearch.TextPath="DisplayName"
+                                      IsEnabled="{Binding KeepWindowsDefaultSupported}"
+                                      ToolTip="{Binding KeepWindowsDefaultTooltip}" />
+                        </StackPanel>
 
-                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Default output device for mapped apps" Margin="20,0,10,0" />
-                        <ComboBox Grid.Row="0" Grid.Column="3"
-                                  ItemsSource="{Binding OutputDevices}"
-                                  SelectedItem="{Binding DefaultOutputDevice, Mode=TwoWay}"
-                                  ItemTemplate="{StaticResource AudioDeviceItem}"
-                                  TextSearch.TextPath="DisplayName"
-                                  IsEnabled="{Binding AudioRoutingSupported}"
-                                  ToolTip="{Binding OutputDeviceTooltip}" />
-
-                        <CheckBox Grid.Row="1" Grid.Column="0"
-                                  Content="Hold Windows default"
-                                  IsChecked="{Binding KeepWindowsDefault}"
-                                  IsEnabled="{Binding KeepWindowsDefaultSupported}"
-                                  VerticalAlignment="Center"
-                                  Margin="0,12,10,0"
-                                  ToolTip="{Binding KeepWindowsDefaultTooltip}" />
-                        <ComboBox Grid.Row="1" Grid.Column="1"
-                                  ItemsSource="{Binding SystemDefaultDevices}"
-                                  SelectedItem="{Binding KeepWindowsDefaultDevice, Mode=TwoWay}"
-                                  ItemTemplate="{StaticResource AudioDeviceItem}"
-                                  TextSearch.TextPath="DisplayName"
-                                  IsEnabled="{Binding KeepWindowsDefaultSupported}"
-                                  Margin="0,12,0,0"
-                                  ToolTip="{Binding KeepWindowsDefaultTooltip}" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3"
-                                   Text="Puts the Windows default playback device back when SteelSeries GG takes it at startup."
+                        <TextBlock Text="Puts the Windows default playback device back when SteelSeries GG takes it at startup."
                                    Foreground="{StaticResource Dim}"
                                    FontSize="11"
-                                   TextTrimming="CharacterEllipsis"
-                                   VerticalAlignment="Center"
-                                   Margin="20,12,0,0"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"
                                    ToolTip="{Binding KeepWindowsDefaultTooltip}" />
 
-                        <StackPanel Grid.Row="2" Grid.ColumnSpan="5"
-                                    Orientation="Horizontal"
-                                    HorizontalAlignment="Right"
-                                    Margin="0,12,0,0">
-                            <CheckBox Content="Show notifications"
-                                      IsChecked="{Binding ShowNotifications}"
-                                      Margin="0,0,16,0"
-                                      ToolTip="Pop a desktop notification whenever the preset is switched." />
-                            <CheckBox Content="Start with Windows" IsChecked="{Binding StartWithWindows}" Margin="0,0,16,0" />
-                            <CheckBox Content="Minimize to tray" IsChecked="{Binding MinimizeToTray}" Margin="0,0,16,0" />
+                        <Border Height="1"
+                                Background="{StaticResource Line}"
+                                Margin="0,14,0,12" />
+
+                        <TextBlock Text="APP" Style="{StaticResource SectionHeader}" />
+
+                        <CheckBox Content="Show notifications"
+                                  IsChecked="{Binding ShowNotifications}"
+                                  HorizontalAlignment="Left"
+                                  Margin="0,0,0,8"
+                                  ToolTip="Pop a desktop notification whenever the preset is switched." />
+                        <CheckBox Content="Start with Windows"
+                                  IsChecked="{Binding StartWithWindows}"
+                                  HorizontalAlignment="Left"
+                                  Margin="0,0,0,8" />
+                        <CheckBox Content="Minimize to tray"
+                                  IsChecked="{Binding MinimizeToTray}"
+                                  HorizontalAlignment="Left"
+                                  Margin="0,0,0,10" />
+
+                        <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Poll every" Foreground="{StaticResource Dim}" Margin="0,0,6,0" />
                             <ComboBox SelectedValue="{Binding PollIntervalSeconds, Mode=TwoWay}"
                                       SelectedValuePath="Tag"
@@ -758,7 +950,7 @@
                                 <ComboBoxItem Content="10 s" Tag="10" />
                             </ComboBox>
                         </StackPanel>
-                    </Grid>
+                    </StackPanel>
                 </TabItem>
 
             </TabControl>

@@ -110,6 +110,25 @@ public sealed class AppSettings
     public double ChatMixBalance { get; set; }
 
     /// <summary>
+    /// Writes <see cref="MicGains"/> into Equalizer APO's config as per-microphone preamps. Off by
+    /// default: it writes into another program's config folder. See <see cref="MicGainRule"/> for why
+    /// this is not a Sonar setting.
+    /// </summary>
+    [JsonPropertyName("applyMicGain")]
+    public bool ApplyMicGain { get; set; }
+
+    [JsonPropertyName("micGains")]
+    public List<MicGainRule> MicGains { get; set; } = [];
+
+    /// <summary>
+    /// Re-points the "Sonar …" audio sources in OBS at Sonar's current virtual devices each time OBS
+    /// starts. Off by default: it writes into another program, over OBS's WebSocket server. Creating
+    /// the sources is a button, not this toggle.
+    /// </summary>
+    [JsonPropertyName("applyObsAudio")]
+    public bool ApplyObsAudio { get; set; }
+
+    /// <summary>
     /// The Sonar mixer mode in force before this app switched to streamer mode for a mapping, or empty
     /// when we have not switched.
     ///

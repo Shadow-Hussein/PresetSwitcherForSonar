@@ -260,17 +260,27 @@
                         <!--
                             Same fill, border, radius and padding as the Card style. Tab pages carry no
                             Border of their own, or the two 1px Line edges would stack.
+
+                            The page scrolls here, once, for every tab - so a page is measured with
+                            unlimited height and must not use star rows or a ScrollViewer of its own.
+                            The right padding is split 6 + 10 so the scrollbar sits in the gutter
+                            instead of pushing the content sideways when it appears.
                         -->
                         <Border Grid.Row="1"
                                 Background="{StaticResource Panel}"
                                 BorderBrush="{StaticResource Line}"
                                 BorderThickness="1"
                                 CornerRadius="8"
-                                Padding="16"
+                                Padding="16,16,6,16"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter x:Name="PART_SelectedContentHost"
-                                              ContentSource="SelectedContent"
-                                              SnapsToDevicePixels="True" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          Focusable="False">
+                                <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                  ContentSource="SelectedContent"
+                                                  Margin="0,0,10,0"
+                                                  SnapsToDevicePixels="True" />
+                            </ScrollViewer>
                         </Border>
                     </Grid>
                 </ControlTemplate>

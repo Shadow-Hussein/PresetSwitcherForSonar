@@ -16,6 +16,9 @@ public sealed class SonarRedirection
     public const string GameChannel = "game";
     public const string MediaChannel = "media";
 
+    /// <summary>The capture side: the physical microphone Sonar is reading from.</summary>
+    public const string MicChannel = "mic";
+
     [JsonPropertyName("id")]
     public string Id { get; set; } = "";
 
